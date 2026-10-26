@@ -21,7 +21,7 @@ Claude·Codex는 선택이다. 없어도 아래만으로 진행한다.
 
 ```text
 python "<repo>/plugins/han/grok/scripts/han_state.py" snapshot --project "<작업 루트>"
-python "<repo>/plugins/han/skills/mission/scripts/mission_state.py" --project "<작업 루트>" active
+python "<repo>/plugins/han/skills/mission/scripts/mission_state.py" --runtime grok --project "<작업 루트>" active
 ```
 
 `<repo>`는 `HAN_REPO`이거나 저장소 체크아웃이다. `active` 대신 해당 미션의 `status`를 읽어도 된다.

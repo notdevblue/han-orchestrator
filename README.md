@@ -18,7 +18,7 @@ Grok Bot은 바깥 코디네이터로 상태를 읽고, 메인 또는 슬롯의 
 | `/han:slots` | `plugins/han/skills/slots/` | 병렬 미션용 슬롯 워크스페이스 만들기·갱신·실행·삭제 |
 | `/han:doctor` | `plugins/han/skills/doctor/` | 읽기 전용 점검: python 스텁, 레지스트리·어댑터·local.json, guard-cases, ACTIVE 끊김 의심(닫기는 제안만), Unity 경로, 저장소·설치본 버전. Codex는 `han-doctor` |
 | Grok 바깥 층 | `grok/` | 등록하지 않는 초안. 읽기 전용 셸 호출 목록. 실행 절차는 `plugins/han/grok/` |
-| Grok 조회 | `plugins/han/grok/` | 등록 스킬은 `han-status`·`han-doctor`·`han-mission-brief`·`han-run`. 상태·진단·브리프는 그대로이고 구현 절차는 `han-run`. 프로젝트 규칙은 `AGENTS.md`·`CLAUDE.md`. `han-watch`·`han-handoff`는 등록하지 않는 안내 |
+| Grok 조회 | `plugins/han/grok/` | 등록 스킬은 `han-status`·`han-doctor`·`han-mission-brief`·`han-run`·`han-mission`·`han-slots`·`han-adapter-init`·`han-distill`. 상태·진단·브리프는 그대로이고 구현 절차는 `han-run`. 미션·슬롯·어댑터·피드백은 공유 스크립트를 부르는 얇은 래퍼. `han-watch`·`han-handoff`는 등록하지 않는 안내 |
 | 미션 가드 | `plugins/han/hooks/mission_guard.py` | 미션 중 submit 등 금지 명령 차단(걸림줄) |
 | 질문 무결성 | `plugins/han/hooks/question_integrity.py` | 도구 실행 후 변경 없는 질문 입력은 성공한 검사 결과 재사용. 답변 종료 전에는 전체 검사 |
 | 어댑터 | `adapters/<이름>/` | 프로젝트별 값(`adapter.json`)과 절차(`adapter.md`) |
@@ -132,14 +132,14 @@ Grok 코디네이터는 상태를 읽고 메인 또는 슬롯의 실행 봇에 �
 그다음 `HAN_ADAPTERS_DIR`, `HAN_REPO/adapters`, 저장소에서 직접 실행할 때 `<저장소>/adapters` 순이다.
 Claude 플러그인 설정과 Codex `config.toml`은 읽지 않는다. `runtimes.codex`는 적용하지 않고 공유 어댑터와 `local.json`만 본다.
 
-머지된 저장소를 Grok 셸이 닿는 PC에 받은 뒤 스킬 네 개만 등록한다. `claude plugin`·`codex plugin` 명령은 쓰지 않는다.
+머지된 저장소를 Grok 셸이 닿는 PC에 받은 뒤 스킬 여덟 개만 등록한다. `claude plugin`·`codex plugin` 명령은 쓰지 않는다.
 
 1. 저장소 체크아웃 경로 `<repo>`를 정한다.
 2. 그 PC의 Grok 셸에 `HAN_ADAPTERS_DIR=<저장소>/adapters` 또는 `HAN_REPO=<저장소>`를 둔다.
    프로젝트 안에 `.grok/orchestrator/adapter.json`이 있으면 레지스트리보다 그 파일이 우선한다.
-3. `~/.grok/config.toml`의 `[skills].paths`에는 등록 폴더 네 개만 적는다.
+3. `~/.grok/config.toml`의 `[skills].paths`에는 등록 폴더 여덟 개만 적는다.
    부모 `plugins/han/grok/skills`는 넣지 않는다. `han-watch`와 `han-handoff`는 CLI 발견 목록에 두지 않는다.
-   같은 네 폴더를 `~/.grok/skills`에 링크해도 된다.
+   같은 여덟 폴더를 `~/.grok/skills`에 링크해도 된다.
 
 ```toml
 [skills]
@@ -148,16 +148,24 @@ paths = [
   "<repo>/plugins/han/grok/skills/han-doctor",
   "<repo>/plugins/han/grok/skills/han-mission-brief",
   "<repo>/plugins/han/grok/skills/han-run",
+  "<repo>/plugins/han/grok/skills/han-mission",
+  "<repo>/plugins/han/grok/skills/han-slots",
+  "<repo>/plugins/han/grok/skills/han-adapter-init",
+  "<repo>/plugins/han/grok/skills/han-distill",
 ]
 ```
 
-4. Grok Bot 스킬 라이브러리에도 아래 네 폴더를 등록하거나, 저장소 경로의 파일을 읽게 한다.
+4. Grok Bot 스킬 라이브러리에도 아래 여덟 폴더를 등록하거나, 저장소 경로의 파일을 읽게 한다.
    - `plugins/han/grok/skills/han-status/SKILL.md`
    - `plugins/han/grok/skills/han-doctor/SKILL.md`
    - `plugins/han/grok/skills/han-mission-brief/SKILL.md`
    - `plugins/han/grok/skills/han-run/SKILL.md`
-   `han-watch`와 `han-handoff` 폴더는 이 넷을 가리키는 저장소 안내이다. 등록하지 않는다.
-   스크립트는 복사본을 만들지 않고 저장소 안의 `han_state.py`를 절대 경로로 호출한다.
+   - `plugins/han/grok/skills/han-mission/SKILL.md`
+   - `plugins/han/grok/skills/han-slots/SKILL.md`
+   - `plugins/han/grok/skills/han-adapter-init/SKILL.md`
+   - `plugins/han/grok/skills/han-distill/SKILL.md`
+   `han-watch`와 `han-handoff` 폴더는 이 등록 스킬을 가리키는 저장소 안내이다. 등록하지 않는다.
+   스크립트는 복사본을 만들지 않는다. 조회는 저장소 안의 `han_state.py`를, 미션·슬롯·어댑터 점검·피드백 정리는 `plugins/han/skills/`의 공유 스크립트를 절대 경로로 호출한다.
 5. 코디네이터는 상태를 읽고 브리프를 만든다. 기본 인계는 메인 작업 폴더 `<project>` 또는
    슬롯 작업 폴더 `<slot-path>`의 실행 봇에 보낼 SendToAgent 블록이다.
    슬롯 봇은 미션이 붙기 전까지 대기한다. Claude·Codex 문장은 사용자가 그 런타임을 지정할 때만 붙인다.
@@ -266,5 +274,6 @@ Claude 입력·캐시·출력·Advisor와 리뷰 기록을 함께 집계한다. 
   - Unity CLI 전면 전환: 공유 에디터 대기열·콘솔 읽기·프로젝트 전용 도구가 없고 아직 베타다. Pipeline 업그레이드 뒤 병행 비교한다.
 - Grok 코디네이터는 상태를 읽고 메인·슬롯의 실행 봇에 작업을 넘길 수 있다. 로컬 상태·슬롯 조회는 han 스크립트로 하고,
   저장소 코드 작업은 프로젝트의 실행 규칙을 따른다. Claude·Codex는 선택 경로다. `han-status`와 `han-doctor`는 읽기 전용이고, 인계는 `han-mission-brief`, 구현 절차는 `han-run`이다.
-  Main·slotN의 Grok CLI는 그 자리에서 구현한다. 등록은 그 네 스킬뿐이며 `han-watch`·`han-handoff`는 등록하지 않는다.
-  CLI `skills.paths`도 그 네 폴더만 적는다. 전역 규칙은 `~/.grok/rules/`에 두고 스킬에 복제하지 않는다. 읽기 전용 셸 목록은 `grok/README.md`.
+  미션·슬롯·어댑터 초안·피드백 정리는 `han-mission`·`han-slots`·`han-adapter-init`·`han-distill`이 공유 스크립트를 부른다.
+  Main·slotN의 Grok CLI는 그 자리에서 구현한다. 등록은 그 여덟 스킬이며 `han-watch`·`han-handoff`는 등록하지 않는다.
+  CLI `skills.paths`도 그 여덟 폴더만 적는다. 전역 규칙은 `~/.grok/rules/`에 두고 스킬에 복제하지 않는다. 읽기 전용 셸 목록은 `grok/README.md`.

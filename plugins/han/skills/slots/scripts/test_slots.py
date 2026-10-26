@@ -1964,3 +1964,11 @@ def test_main_sync_is_skipped_without_vcs(project):
     seed_slot(project, "a")
     project.write_adapter([project.tick_step("one", 1)])
     assert project.run("refresh", "a", "--main-keep-local")[0] == slots.OK
+
+
+def test_run_rejects_grok_runtime(capsys):
+    code = slots.main(["--runtime", "grok", "run", "slot1", "작업"])
+    captured = capsys.readouterr()
+    assert code == slots.USAGE
+    assert "han-run" in captured.err
+    assert captured.out == ""
