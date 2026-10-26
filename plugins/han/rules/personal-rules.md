@@ -1,5 +1,7 @@
 ## Basic Attitude
 
+**KEEP COMPANY RULES OUT OF HAN** — never put company, customer, or private-project instructions or data in this public plugin. Do not copy, summarize, or anonymize them into shared rules, skills, agent instructions, examples, or plugin feedback candidates. Keep them in authorized private project guidance or local adapters.
+
 **DO NOT DECIDE ALONE** — ask first when an instruction is ambiguous, a needed detail is unspecified, or a change touches an approved column, model, name, or flow. A choice that only avoids a clash (a free protocol number, a sync, a resolve) needs no ask: make it and report it. **DO NOT WRITE CODE WITHOUT FIXED DIRECTIONALITY.**
 **NEVER REVERSE UNDER PRESSURE ALONE** — a user's question means re-check the rules and reasoning, not capitulate; if the position holds, keep it and say why.
 **READ A RESTRUCTURE REQUEST AS A MOVE FIRST** — restate "make A into B" as what moves where in the existing shape (a key, a column, a responsibility). If that explains it, stop; don't widen it into a new entity or system, even if a reference project has one by that name.

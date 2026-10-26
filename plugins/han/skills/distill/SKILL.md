@@ -13,6 +13,10 @@ description: 세션(또는 미션)에서 사용자가 준 피드백을 대화 �
 
 ## 1. 뽑기
 
+원본 대화 기록, 추출 출력, 처리 로그, 후보 목록은 공개 플러그인 체크아웃에 만들거나 복사하지 않는다.
+`<scratchpad>`와 `HAN_DISTILL_LOG`가 저장소 밖의 비공개 위치인지 확인한다. 회사·고객·비공개 프로젝트의
+기록을 처리할 때는 해당 자료를 둘 권한이 있는 위치만 쓴다.
+
 ```
 python "${CLAUDE_PLUGIN_ROOT}/skills/distill/scripts/distill.py" extract --out <scratchpad>/distill.md
 ```
@@ -36,6 +40,11 @@ python "${CLAUDE_PLUGIN_ROOT}/skills/distill/scripts/distill.py" extract --out <
 대부분 버린다. 남길 게 없으면 "남길 것 없음"이라고 말하고 `record --verdict 확인` 으로 워터마크만 올린다.
 
 ## 3. 반영할 곳 정하기
+
+회사·고객·비공개 프로젝트의 지침·요구사항·사례는 `rules`·`plugin` 후보로 올리지 않는다.
+원문 복사뿐 아니라 요약·익명화한 내용을 공개 플러그인에 반영하는 것도 금지한다.
+이 항목은 해당 자료를 둘 권한이 있는 비공개 프로젝트의 `guide` 또는 저장소 밖의 개인 로컬 설정·메모리로만
+분류한다. 허용된 위치를 확정할 수 없으면 반영을 보류하고 묻는다. 공개용 일반 규칙으로 바꿔 우회하지 않는다.
 
 | dest | 대상 | 고르는 기준 |
 | --- | --- | --- |
@@ -95,8 +104,11 @@ python "${CLAUDE_PLUGIN_ROOT}/skills/distill/scripts/distill.py" record --sessio
 
 ## han 원본 위치
 
-`${CLAUDE_PLUGIN_ROOT}` 는 플러그인 캐시 사본이라 고쳐도 다음 갱신 때 사라진다. `rules`·`plugin` 은 원본을 고친다.
-원본은 `~/.claude/plugins/known_marketplaces.json` 의 `han-orchestrator.installLocation` 아래 `plugins/han` 이다.
+기준 저장소는 `https://github.com/notdevblue/han-orchestrator`다. `rules`·`plugin`은 이 저장소의 개발 체크아웃을 고친다.
+`${CLAUDE_PLUGIN_ROOT}`의 플러그인 캐시와 `known_marketplaces.json`의 `installLocation`에 있는 마켓플레이스
+clone은 설치·갱신용 사본이며 개발 원본으로 쓰지 않는다.
+기존 개발 체크아웃의 Git remote가 기준 저장소를 가리키는지 확인한다. 디렉터리 구조나 manifest가 있다는 이유로
+원본으로 판단하지 않는다. 개발 체크아웃의 경로를 확정할 수 없으면 사용자에게 묻는다.
 
 - Claude 개인 규칙: `plugins/han/rules/personal-rules.md`(서브에이전트에도 주입), `plugins/han/rules/main-session.md`(답변·계획·서브에이전트 파견처럼 메인 세션에만 주입)
 - Codex 개인 규칙: `plugins/han/codex/rules/` 아래 같은 두 파일(서브에이전트 파견 내용이 Claude 쪽과 다르다)
