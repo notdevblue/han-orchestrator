@@ -1,0 +1,12 @@
+{
+  "name": "han-orchestrator-codex",
+  "interface": { "displayName": "han Codex Orchestrator" },
+  "plugins": [
+    {
+      "name": "han-codex",
+      "source": { "source": "local", "path": "./plugins/han" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.claim
+.test-tmp/
+.test-tmp/
+adapters/projects.json
+adapters/*/local.json
+adapters/*
+!adapters/example/
+!adapters/projects.example.json

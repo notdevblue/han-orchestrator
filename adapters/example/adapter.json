@@ -1,0 +1,261 @@
+{
+  "schema": 1,
+  "project": "Game",
+  "paths": {
+    "vcsRoot": ".",
+    "stateDir": "_My/missions"
+  },
+  "stages": [
+    {
+      "id": "content",
+      "kind": "research",
+      "label": "컨텐츠 확인"
+    },
+    {
+      "id": "poc",
+      "kind": "design",
+      "label": "PoC",
+      "skill": "game-poc",
+      "optional": true
+    },
+    {
+      "id": "impl",
+      "kind": "implement",
+      "label": "구현 진행"
+    },
+    {
+      "id": "review",
+      "kind": "review",
+      "label": "검토 & 리뷰"
+    }
+  ],
+  "guard": {
+    "deny": [
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+submit\\b",
+        "reason": "미션 중 submit 금지. 확인 C에서 사용자가 요청할 때만"
+      },
+      {
+        "pattern": "vcs-wrapper(?:-tui)?(?:\\.exe)?[\"']?\\s+(?:pending\\s+submit|p4(?:\\s+-\\S+(?:\\s+\\S+)?)*\\s+submit)\\b",
+        "reason": "미션 중 submit 금지. 확인 C에서 사용자가 요청할 때만"
+      },
+      {
+        "pattern": "\\bqualitygate(?:\\.bat)?[\"']?\\s+submit\\b",
+        "reason": "미션 중 게이트 submit 금지(--check-only 포함). 확인 C에서 사용자가 요청할 때만"
+      },
+      {
+        "pattern": "\\bcli\\.py[\"']?\\s+submit\\b",
+        "reason": "미션 중 게이트 submit 금지. 확인 C에서 사용자가 요청할 때만",
+        "except": [
+          "Tool[\\\\/]ProjectOps[\\\\/]python-runner\\.bat\\s+Tool[\\\\/]ProjectOps[\\\\/]cli\\.py\\s+submit\\s+[1-9]\\d*\\s+--check-only(?:[ \\t]+1?>[ \\t]*(?:[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\-]*\\.stdout\\.log|\"[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stdout\\.log\"|'[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stdout\\.log')[ \\t]+2>[ \\t]*(?:[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\-]*\\.stderr\\.log|\"[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stderr\\.log\"|'[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stderr\\.log'))?"
+        ]
+      },
+      {
+        "pattern": "(?:^|\\s)submit(?:\\s|$)",
+        "reason": "미션 중 submit 실행 금지. 제한된 조회·출력과 검증된 --check-only만 예외",
+        "except": [
+          "rg(?:\\.exe)?(?:\\s+(?:-n|-i|-l|-F|--line-number|--no-heading|--fixed-strings|--no-config))*\\s+(?:[A-Za-z0-9_./:][A-Za-z0-9_./:-]*|\"[A-Za-z0-9_./:][A-Za-z0-9_./: -]*\"|'[A-Za-z0-9_./:][A-Za-z0-9_./: -]*')(?:\\s+(?:[A-Za-z0-9_./:][A-Za-z0-9_./:-]*|\"[A-Za-z0-9_./:][A-Za-z0-9_./: -]*\"|'[A-Za-z0-9_./:][A-Za-z0-9_./: -]*'))*",
+          "Write-Output\\s+(?:[A-Za-z0-9_./:][A-Za-z0-9_./:-]*|\"[A-Za-z0-9_./:][A-Za-z0-9_./: -]*\"|'[A-Za-z0-9_./:][A-Za-z0-9_./: -]*')(?:\\s+(?:[A-Za-z0-9_./:][A-Za-z0-9_./:-]*|\"[A-Za-z0-9_./:][A-Za-z0-9_./: -]*\"|'[A-Za-z0-9_./:][A-Za-z0-9_./: -]*'))*",
+          "Tool[\\\\/]ProjectOps[\\\\/]python-runner\\.bat\\s+Tool[\\\\/]ProjectOps[\\\\/]cli\\.py\\s+submit\\s+[1-9]\\d*\\s+--check-only(?:[ \\t]+1?>[ \\t]*(?:[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\-]*\\.stdout\\.log|\"[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stdout\\.log\"|'[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stdout\\.log')[ \\t]+2>[ \\t]*(?:[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\-]*\\.stderr\\.log|\"[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stderr\\.log\"|'[A-Za-z0-9_./:\\\\][A-Za-z0-9_./:\\\\ -]*\\.stderr\\.log'))?"
+        ]
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+obliterate\\b",
+        "reason": "depot 이력 삭제 금지"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+populate\\b",
+        "reason": "populate 는 depot 에 바로 submit 하는 명령. 금지"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+shelve\\b.*\\s-d\\b",
+        "reason": "shelve 삭제는 사용자 확인 후"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+unshelve\\b",
+        "reason": "unshelve 는 로컬 파일을 덮어씀. 사용자 확인 후"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+change(?:list)?\\b.*\\s-[dfi]\\b",
+        "reason": "CL 삭제·강제 수정·spec 재입력 금지(-i 는 Files 누락 위험). 설명은 qualitygate change-description 으로"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+revert\\b(?!(?=.*\\s-a\\b)(?=.*\\s-c\\s*(?:\\d+|\\$\\{?\\w+\\}?|\"\\$\\{?\\w+\\}?\")(?=\\s|$)))",
+        "reason": "미션 중 revert 는 변경 없는 파일 닫기(-a -c <내 CL>)만"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+reopen\\b",
+        "reason": "다른 CL의 파일을 옮기면 그 CL이 깨진다"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+(?:sync|flush|clean)\\b",
+        "reason": "공유 워크스페이스 sync·flush·clean 은 사용자 확인 후(stale shelve 대응 포함)"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+(?:edit|add|delete|move|integrate|integ|copy|merge|reconcile|rec|open|rename|undo|resolve)\\b(?!.*\\s-c\\s*(?:\\d+|\\$\\{?\\w+\\}?|\"\\$\\{?\\w+\\}?\")(?=\\s|$))",
+        "reason": "default CL 금지. 번호 CL(-c <CL>)에만 연다(resolve 포함)"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+(?:protect|admin|lock|unlock)\\b",
+        "reason": "서버 권한·잠금 변경 금지"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+(?:client|workspace)\\b.*\\s-i\\b",
+        "reason": "워크스페이스 spec 재입력 금지"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?p4(?:\\.exe)?[\"']?(?:\\s+-\\w+(?:=\\S*)?(?:\\s+(?:\"[^\"]*\"|'[^']*'|[^-\\s]\\S*|-))?)*\\s+(?:client|workspace|user|branch|label|stream)\\b.*\\s-d\\b",
+        "reason": "워크스페이스·유저·브랜치·레이블·스트림 삭제 금지"
+      },
+      {
+        "pattern": "vcs-wrapper(?:\\.exe)?[\"']?\\s+(?:pending\\s+move-files|workspace\\s+delete|git\\s+pull|admin|deploy)\\b",
+        "reason": "vcs-wrapper 의 파일 이동·워크스페이스 삭제·git pull·admin·deploy 는 사용자 확인 후"
+      },
+      {
+        "pattern": "^(?:&\\s*)?(?:[\"'][^\"']*[\\\\/]|[\"']|\\S*[\\\\/])?(?:python3?|py)(?:\\.exe)?[\"']?(?:\\s+-(?:X\\s+)?\\S+)*\\s+(?:\"[^\"]*slots\\.py\"|'[^']*slots\\.py'|\\S*slots\\.py)(?:\\s+--project(?:\\s+|=)(?:\"[^\"]*\"|'[^']*'|\\S+))?\\s+(?:create|refresh|remove|run)\\b",
+        "reason": "슬롯 조작(create·refresh·remove·run)은 미션 밖(ACTIVE 없는 세션)에서만. status 는 허용"
+      }
+    ]
+  },
+  "roles": {
+    "research": "han:researcher",
+    "implement": "han:dev-medium",
+    "verify": "han:verifier",
+    "review": "code-reviewer",
+    "reviewLoopSkill": "review-loop",
+    "implementSmall": "han:dev-small"
+  },
+  "verify": {
+    "backend": "mcp",
+    "grades": [
+      "live-verified",
+      "editmode-pass",
+      "pytest-pass",
+      "dbc-pass",
+      "compile-only",
+      "lint-pass",
+      "doc-only"
+    ]
+  },
+  "report": {
+    "push": true
+  },
+  "slots": {
+    "enabled": true,
+    "names": [
+      "slot1",
+      "slot2",
+      "slot3"
+    ],
+    "vcs": "perforce",
+    "stream": "//Depot/Main",
+    "churn": [
+      "Unity/Game/Assets/Resources/Fonts/dynamic_font_sdf.asset"
+    ],
+    "prepare": [
+      {
+        "id": "sync",
+        "group": 1,
+        "run": "p4 -c {client} sync -q --parallel=threads=8 //Depot/Main/...@{baseline}"
+      },
+      {
+        "id": "library",
+        "group": 1,
+        "run": "robocopy \"{main}\\Unity\\Game\\Library\" \"{slot}\\Unity\\Game\\Library\" /E /COPY:DAT /DCOPY:DAT /MT:32 /R:1 /W:1 /NFL /NDL /NP /XD \"{main}\\Unity\\Game\\Library\\UnityMcp\"",
+        "okExit": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "id": "junction",
+        "group": 2,
+        "run": "cmd /c \"{slot}\\Code\\setup.bat\""
+      },
+      {
+        "id": "claudeLocal",
+        "group": 2,
+        "run": "robocopy \"{main}\\.claude\" \"{slot}\\.claude\" settings.local.json /COPY:DAT /R:1 /W:1 /NFL /NDL /NP",
+        "okExit": [
+          0,
+          1
+        ]
+      },
+      {
+        "id": "memory",
+        "group": 2,
+        "run": "powershell -NoProfile -NonInteractive -Command \"$ErrorActionPreference='Stop'; $l='{memoryDir}'; $t='{mainMemoryDir}'; $i=Get-Item -LiteralPath $l -Force -ErrorAction SilentlyContinue; if($i){ if($i.LinkType -eq 'Junction' -and @($i.Target | Where-Object { $_.TrimEnd('\\') -ieq $t.TrimEnd('\\') })){ exit 0 }; Write-Output ('exists-not-junction: '+$l); exit 1 }; New-Item -ItemType Directory -Force -Path $t | Out-Null; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $l) | Out-Null; New-Item -ItemType Junction -Path $l -Target $t | Out-Null\""
+      },
+      {
+        "id": "import",
+        "group": 3,
+        "exclusive": true,
+        "run": "\"{unityExe}\" -batchmode -nographics -projectPath \"{slot}\\Unity\\Game\" -executeMethod Packages.Rider.Editor.RiderScriptEditor.SyncSolution -quit -logFile \"{log}\""
+      },
+      {
+        "id": "verify",
+        "group": 4,
+        "cwd": "{slot}",
+        "run": "cmd /c \"Build\\project-build.bat code build GameServer\""
+      }
+    ],
+    "refresh": [
+      "sync",
+      "import"
+    ],
+    "editor": "\"{unityExe}\" -projectPath \"{slot}\\Unity\\Game\"",
+    "autocompact": 500000
+  },
+  "runtimes": {
+    "codex": {
+      "roles": {
+        "research": "han_researcher",
+        "implement": "han_developer_medium",
+        "verify": "han_verifier",
+        "review": "code-reviewer",
+        "reviewLoopSkill": "review-loop",
+        "implementSmall": "han_developer_small"
+      },
+      "slots": {
+        "prepare": [
+          {
+            "id": "sync",
+            "group": 1,
+            "run": "p4 -c {client} sync -q --parallel=threads=8 //Depot/Main/...@{baseline}"
+          },
+          {
+            "id": "library",
+            "group": 1,
+            "run": "robocopy \"{main}\\Unity\\Game\\Library\" \"{slot}\\Unity\\Game\\Library\" /E /COPY:DAT /DCOPY:DAT /MT:32 /R:1 /W:1 /NFL /NDL /NP /XD \"{main}\\Unity\\Game\\Library\\UnityMcp\"",
+            "okExit": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "id": "junction",
+            "group": 2,
+            "run": "cmd /c \"{slot}\\Code\\setup.bat\""
+          },
+          {
+            "id": "import",
+            "group": 3,
+            "exclusive": true,
+            "run": "\"{unityExe}\" -batchmode -nographics -projectPath \"{slot}\\Unity\\Game\" -executeMethod Packages.Rider.Editor.RiderScriptEditor.SyncSolution -quit -logFile \"{log}\""
+          },
+          {
+            "id": "verify",
+            "group": 4,
+            "cwd": "{slot}",
+            "run": "cmd /c \"Build\\project-build.bat code build GameServer\""
+          }
+        ],
+        "autocompact": 200000
+      }
+    }
+  }
+}

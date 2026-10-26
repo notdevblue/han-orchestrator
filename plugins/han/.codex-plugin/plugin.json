@@ -1,0 +1,16 @@
+{
+  "name": "han-codex",
+  "description": "Codex CLI 미션 오케스트레이션, 슬롯 워크스페이스, 어댑터와 개인 규칙",
+  "version": "0.1.44",
+  "author": {
+    "name": "han"
+  },
+  "skills": "./codex/skills/",
+  "hooks": "./codex/hooks.json",
+  "interface": {
+    "displayName": "han Codex",
+    "shortDescription": "계획 승인 → 마일스톤 구현·검증·리뷰 → 마지막 확인",
+    "developerName": "han",
+    "category": "Productivity"
+  }
+}

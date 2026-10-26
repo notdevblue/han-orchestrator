@@ -1,0 +1,11 @@
+{
+  "slots": {
+    "root": "D:/Work/slots",
+    "client": "ws-yourname_{name}",
+    "mainClient": "ws-yourname_Main"
+  },
+  "vars": {
+    "unityExe": "C:/Program Files/Unity/Hub/Editor/<version>/Editor/Unity.exe",
+    "main": "D:/Work/Game_Main"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "han",
+  "description": "계획 승인 → 마일스톤 자율 루프 → 마지막 확인. 프로젝트별 값은 저장소 안 .claude/orchestrator 또는 개인 레지스트리의 어댑터에서 읽는다",
+  "author": {
+    "name": "han"
+  },
+  "version": "0.2.52",
+  "userConfig": {
+    "adapters_dir": {
+      "type": "string",
+      "title": "어댑터 폴더",
+      "description": "미션 어댑터 레지스트리 폴더. 예: <repo>/adapters",
+      "sensitive": false
+    },
+    "inject_rules": {
+      "type": "string",
+      "title": "개인 규칙 주입",
+      "description": "on 이면 rules/ 의 개인 규칙을 세션·서브에이전트 시작 때 넣는다. 비우면 안 넣음",
+      "sensitive": false
+    }
+  }
+}

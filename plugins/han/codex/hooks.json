@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact|fork",
+        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/session_rules.py\"", "timeout": 10 }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/session_rules.py\"", "timeout": 10 }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/mission_guard.py\"", "timeout": 10 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/korean_reply.py\"", "timeout": 5 }]
+      }
+    ]
+  }
+}

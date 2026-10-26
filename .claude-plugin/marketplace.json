@@ -1,0 +1,19 @@
+{
+  "name": "han-orchestrator",
+  "description": "작업 하나를 마일스톤으로 나눠 조사·구현·검증을 파견하고 사람에게는 보고만 하는 미션 오케스트레이션",
+  "owner": {
+    "name": "han"
+  },
+  "plugins": [
+    {
+      "name": "han",
+      "description": "계획 승인 → 마일스톤 자율 루프 → 마지막 확인. 프로젝트별 값은 저장소 안 .claude/orchestrator 또는 개인 레지스트리의 어댑터에서 읽는다",
+      "author": {
+        "name": "han"
+      },
+      "source": "./plugins/han",
+      "category": "productivity",
+      "version": "0.2.52"
+    }
+  ]
+}
