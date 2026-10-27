@@ -925,6 +925,12 @@ def cmd_question_answer(ctx, args):
     return [f"답변 저장: {record['id']}.md (revision {record['revision']})"]
 
 
+def cmd_question_restore(ctx, args):
+    require_folder(ctx)
+    record = question_records.restore_document(ctx.folder, args.input, args.source, args.expect_revision, args.expect_sha256)
+    return [f"질문 기록 복구: {record['id']}.md (revision {record['revision']})"]
+
+
 def cmd_question_show(ctx, args):
     require_folder(ctx)
     return [json.dumps(question_records.read_document(ctx.folder, args.name), ensure_ascii=False, indent=2)]
@@ -1024,6 +1030,11 @@ def build_parser():
     answer = leaf(question, "answer", cmd_question_answer)
     answer.add_argument("name")
     answer.add_argument("--input", required=True)
+    restore = leaf(question, "restore", cmd_question_restore)
+    restore.add_argument("--input", required=True)
+    restore.add_argument("--source", required=True)
+    restore.add_argument("--expect-revision", type=int, required=True)
+    restore.add_argument("--expect-sha256", required=True)
     leaf(question, "show", cmd_question_show).add_argument("name")
     leaf(question, "render", cmd_question_render).add_argument("name")
     leaf(question, "check", cmd_question_check)

@@ -144,6 +144,7 @@ python "<plugin-root>/codex/skills/han-mission/scripts/mission_state.py" <명령
 | `question preview --input <초안JSON>` | 정본을 쓰지 않고 검증한 Markdown 출력 |
 | `question publish --input <초안JSON> [--expect-revision N] [--editorial]` | 검토한 질문 정본 발행·개정과 Markdown 생성 |
 | `question answer <질문.md> --input <답JSON>` | 사용자 원문·문항 상태·승인 대기를 한 번에 기록 |
+| `question restore --input <검토JSON> --source <원본MD> --expect-revision N --expect-sha256 <SHA256>` | Markdown에만 남은 과거 답을 같은 개정에 복원. 원문 대조·독립 검토·원본 백업 필수 |
 | `question show <질문.md>` / `question render <질문.md>` | 정본 읽기 / 정본으로 생성 문서 복구 |
 | `question check` | 미션 전체 질문의 정본 누락·손상·생성본 불일치 검사. 문제 있으면 종료 1 |
 | `document share <미션 상대 경로...>` | 보고·추가 자료를 대시보드에 명시적으로 공유 |

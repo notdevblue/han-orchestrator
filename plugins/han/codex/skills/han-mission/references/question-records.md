@@ -122,6 +122,33 @@ python "<mission-cli>" question check
 - 현재 정본과 내용이 정확히 같은 입력으로 재발행하면 생성본을 복구할 수 있다. 질문 개정을 복구 명목으로 덮어쓰지 않는다.
 - `render`는 현재 정본에서 생성 문서를 복구한다. 질문 내용이 바뀌면 초안 개정·검토·발행으로 돌아간다.
 
+## Markdown에만 남은 과거 답 복원
+
+기존 JSON이 유효하지만 과거 답·승인·설계가 Markdown에만 수동 반영된 경우에는 `render` 전에 원문을 별도 파일로 저장한다.
+코디네이터가 저장한 원문과 기존 정본을 대조하고, 작성자와 별도 검토자가 복원 JSON의 문항·설계·답 원문·날짜·대상 개정·승인 범위를 검토한다.
+`restore`는 그 검토가 끝난 입력에만 쓰는 명시적 기록 수리다. 산문에서 답을 추론하거나 새 승인으로 기록하지 않는다.
+
+```sh
+python "<mission-cli>" question preview --input reviewed-recovery.json > preview.md
+python "<mission-cli>" question restore --input reviewed-recovery.json --source saved-original.md --expect-revision 3 --expect-sha256 <현재-JSON-바이트의-SHA256>
+python "<mission-cli>" question check
+```
+
+- 기존 JSON과 Markdown이 모두 있어야 한다. 입력의 문서 id와 revision은 현재 정본과 같아야 하며, 과거 답의 `revision`·`at`·`text`는 실제 기록대로 유지한다.
+  현재 개정으로 날짜나 승인 대상을 다시 붙이지 않는다. JSON 누락·손상의 자동 복구에는 쓰지 않는다.
+- `--source`에는 저장한 원본 Markdown을 준다. 실행 시 현재 Markdown과 바이트 단위로 같아야 하며 줄바꿈·BOM 차이도 거부한다.
+  `--expect-revision`과 `--expect-sha256`은 현재 JSON 개정과 원본 바이트의 SHA256이다. CLI는 기존 미션 쓰기 잠금 안에서 검사하고 백업 뒤에도 두 파일을 다시 대조한다.
+- 기존 문항 id는 모두 유지한다. 기존 `answers`는 내용·순서가 정확히 같은 앞부분으로 유지하고 `legacy_markdown`의 존재와 원문도 바꾸지 않는다.
+  추가하는 각 답의 원문은 근거 Markdown에 있어야 한다. 이 대조에서만 줄바꿈을 통일하고 앞뒤 공백을 제거한다.
+- 추가 이력을 순서대로 적용한 결과가 최종 문항 상태·답·approval과 일치해야 한다. 새 해결 문항, 기존 답의 변경·철회·대기 복귀와 승인 상태 변경에는 대응하는 추가 이력이 필요하다.
+  문자열 포함 검사는 사실·날짜·대상·승인 의미의 진위를 판정하지 않으므로 독립 검토가 필요하다. 기존 `publish`·`answer`의 개정·답 보호 규칙은 그대로다.
+- `<미션>/questions/history/<id>/recovery/<UTC시각>-<고유id>/`에 `before.json`·`before.md` 원본 바이트와 `input.json` 검토 입력,
+  생성될 `after.json`·`after.md`, `receipt.json`을 보존한다. 영수증에는 수리 시각·문서 개정·각 파일 SHA256과 `prepared`·`complete`·`rolled_back`·`rollback_failed` 상태가 남는다.
+  기존 복구 폴더를 덮어쓰지 않는다. 원본을 온전히 보존하므로 미션의 비공개 자료와 같은 경계로 취급한다.
+- 검증·전제 조건 실패 시 현재 두 파일을 쓰지 않는다. 저장 도중 실패하면 백업을 유지하고 이 실행이 쓴 내용만 원본 바이트로 되돌린다.
+  외부 변경이나 저장 오류로 롤백하지 못하면 백업 위치와 확인 필요 오류를 보고한다. 프로세스 강제 종료 때에는 `prepared` 영수증과 원본을 대조해 수동 확인한다.
+- 성공 뒤 같은 명령의 재시도는 이전 SHA256이 맞지 않아 거부된다. 이미 현재 정본과 같은 입력도 새 복구 없이 거부한다. `question check`로 완료를 확인한다.
+
 ## 기록 확인과 기존 문서 전환
 
 `question check`는 미션 전체 질문 Markdown과 정본을 대조하고 누락·손상·불일치가 있으면 종료 코드 1을 반환한다.

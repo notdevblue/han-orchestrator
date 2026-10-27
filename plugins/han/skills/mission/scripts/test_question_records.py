@@ -1,7 +1,10 @@
 import copy
+import hashlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +19,7 @@ from question_records import (
     read_document,
     render_document,
     render_saved_document,
+    restore_document,
     source_path,
     summarize_document,
 )
@@ -491,3 +495,334 @@ def test_symlink_escape_is_rejected(tmp_path, target):
     with pytest.raises(QuestionRecordError, match="미션 밖"):
         publish_document(mission, document())
     assert not list(outside.iterdir())
+
+
+@pytest.fixture
+def recovery(tmp_path):
+    earlier = {"schema": 1, "id": "first-choice", "revision": 1, "at": "2041-02-03",
+               "text": "Keep the author filter.",
+               "updates": [{"id": "author", "status": "answered", "answer": "Author filter retained."}]}
+    current = {
+        "schema": 1, "id": "ask-library", "revision": 3, "title": "Library filters", "intro": "Choose filters.",
+        "items": [{"id": "author", "title": "Author", "body": "", "status": "answered", "answer": "Author filter retained."},
+                  {"id": "year", "title": "Year", "body": "", "status": "pending", "answer": ""}],
+        "body": "", "approval": {"status": "pending", "reason": "Review remaining filters."},
+        "answers": [earlier], "legacy_markdown": "# Initial library choices\r\n",
+    }
+    publish_document(tmp_path, current)
+    original_json = b"\xef\xbb\xbf" + json.dumps(current, ensure_ascii=False).encode("utf-8") + b"\r\n"
+    source_path(tmp_path, "ask-library.md").write_bytes(original_json)
+    restored = copy.deepcopy(current)
+    restored["items"][1].update(status="answered", answer="Year filter retained.")
+    restored["items"].append({"id": "publisher", "title": "Publisher", "body": "", "status": "withdrawn",
+                              "answer": "Publisher filter excluded."})
+    restored["body"] = "## Approved filter design\n\nAuthor and year filters."
+    restored["approval"] = {"status": "complete", "reason": "Filter design approved."}
+    restored["answers"].extend([
+        {"schema": 1, "id": "year-choice", "revision": 2, "at": "2041-02-05T10:15:00Z",
+         "text": "Keep the year filter.\nShow the selected year.",
+         "updates": [{"id": "year", "status": "answered", "answer": "Year filter retained."}]},
+        {"schema": 1, "id": "final-choice", "revision": 3, "at": "2041-02-07",
+         "text": "Exclude publisher. Approve the filter design.",
+         "updates": [{"id": "publisher", "status": "withdrawn", "answer": "Publisher filter excluded."}],
+         "approval": restored["approval"]},
+    ])
+    original_markdown = ("\ufeff# Recorded library discussion\r\n\r\n" +
+                         "\r\n\r\n".join(item["text"].replace("\n", "\r\n") for item in restored["answers"]) +
+                         "\r\n\r\n## Approved filter design\r\nAuthor and year filters.\r\n").encode("utf-8")
+    (tmp_path / "ask-library.md").write_bytes(original_markdown)
+    evidence = tmp_path / "saved-original.md"
+    evidence.write_bytes(original_markdown)
+    reviewed = tmp_path / "reviewed.json"
+
+    def run(record=restored, **options):
+        reviewed.write_bytes(json.dumps(record, ensure_ascii=False).encode("utf-8"))
+        arguments = {"input_path": reviewed, "source": evidence, "expected_revision": 3,
+                     "expected_sha256": hashlib.sha256(original_json).hexdigest()}
+        arguments.update(options)
+        return restore_document(tmp_path, **arguments)
+
+    return current, restored, original_json, original_markdown, evidence, reviewed, run
+
+
+def assert_recovery_originals(tmp_path, recovery):
+    assert source_path(tmp_path, "ask-library.md").read_bytes() == recovery[2]
+    assert (tmp_path / "ask-library.md").read_bytes() == recovery[3]
+
+
+def test_restore_preserves_historical_dates_revisions_and_byte_snapshots(tmp_path, recovery):
+    current, restored, original_json, original_markdown, _, reviewed, run = recovery
+    assert run() == restored
+    saved = read_document(tmp_path, "ask-library.md")
+    assert saved["revision"] == 3 and saved["answers"][:1] == current["answers"]
+    assert [(entry["revision"], entry["at"]) for entry in saved["answers"]] == [
+        (1, "2041-02-03"), (2, "2041-02-05T10:15:00Z"), (3, "2041-02-07")]
+    history = tmp_path / "questions" / "history" / "ask-library" / "recovery"
+    snapshot, = history.iterdir()
+    assert (snapshot / "before.json").read_bytes() == original_json
+    assert (snapshot / "before.md").read_bytes() == original_markdown
+    assert (snapshot / "input.json").read_bytes() == reviewed.read_bytes()
+    receipt = json.loads((snapshot / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status"] == "complete" and receipt["repaired_at"]
+    for name, digest in receipt["sha256"].items():
+        assert hashlib.sha256((snapshot / name).read_bytes()).hexdigest() == digest
+    assert (snapshot / "after.json").read_bytes() == source_path(tmp_path, "ask-library.md").read_bytes()
+    assert not inspect_document(tmp_path, "ask-library.md", (tmp_path / "ask-library.md").read_text(encoding="utf-8"))[1]
+    with pytest.raises(QuestionRecordError, match="expected_sha256"):
+        run()
+    assert list(history.iterdir()) == [snapshot]
+    with pytest.raises(QuestionRecordError, match="현재 정본과 같음"):
+        run(expected_sha256=receipt["sha256"]["after.json"], source=snapshot / "after.md")
+
+
+@pytest.mark.parametrize("change, message", [
+    (lambda record: record["answers"][0].update(at="2041-02-04"), "앞부분"),
+    (lambda record: record["answers"].pop(0), "앞부분"),
+    (lambda record: record.pop("legacy_markdown"), "legacy_markdown"),
+    (lambda record: record.update(legacy_markdown="Changed original"), "legacy_markdown"),
+    (lambda record: record["items"].pop(0), "문항 id"),
+    (lambda record: record.update(revision=4), "id와 revision"),
+    (lambda record: record["answers"][1].update(text="Use a subject filter instead."), "원문"),
+    (lambda record: record["answers"][1].update(updates=[]), "추가 이력"),
+    (lambda record: record["answers"][2].update(updates=[]), "추가 이력"),
+    (lambda record: record["answers"][2].pop("approval"), "승인 변경"),
+    (lambda record: record["items"][0].update(status="pending", answer=""), "추가 이력"),
+    (lambda record: record["items"][0].update(answer="Author filter excluded."), "추가 이력"),
+    (lambda record: record["answers"][1]["updates"].append({"id": "missing", "status": "answered", "answer": "Include."}), "대상 문항"),
+])
+def test_restore_rejects_lost_history_and_unbacked_outcomes(tmp_path, recovery, change, message):
+    restored = copy.deepcopy(recovery[1])
+    change(restored)
+    with pytest.raises(QuestionRecordError, match=message):
+        recovery[-1](restored)
+    assert_recovery_originals(tmp_path, recovery)
+    assert not (tmp_path / "questions" / "history").exists()
+
+
+@pytest.mark.parametrize("options, message", [
+    ({"expected_revision": 2}, "expected_revision"),
+    ({"expected_sha256": "0" * 64}, "expected_sha256"),
+])
+def test_restore_snapshot_preconditions_reject_before_backups(tmp_path, recovery, options, message):
+    with pytest.raises(QuestionRecordError, match=message):
+        recovery[-1](**options)
+    assert_recovery_originals(tmp_path, recovery)
+    assert not (tmp_path / "questions" / "history").exists()
+
+
+def test_restore_source_requires_exact_bytes(tmp_path, recovery):
+    recovery[4].write_bytes(recovery[3].replace(b"\r\n", b"\n"))
+    with pytest.raises(QuestionRecordError, match="source"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+
+
+@pytest.mark.parametrize("target", ["ask-library.md", "questions/ask-library.json"])
+def test_restore_requires_both_live_files(tmp_path, recovery, target):
+    (tmp_path / target).unlink()
+    with pytest.raises(QuestionRecordError, match="기존 JSON과 Markdown"):
+        recovery[-1]()
+
+
+@pytest.mark.parametrize("target", ["ask-library.md", "questions/ask-library.json"])
+def test_restore_rechecks_snapshot_after_backups(tmp_path, recovery, monkeypatch, target):
+    write_json = question_records.write_json
+    live = tmp_path / target
+    external = b"External writer changed this file.\n"
+
+    def change_live_after_receipt(path, value):
+        write_json(path, value)
+        if path.name == "receipt.json":
+            live.write_bytes(external)
+
+    monkeypatch.setattr(question_records, "write_json", change_live_after_receipt)
+    with pytest.raises(QuestionRecordError, match="준비 중"):
+        recovery[-1]()
+    assert live.read_bytes() == external
+    unchanged = tmp_path / ("questions/ask-library.json" if target.endswith(".md") else "ask-library.md")
+    assert unchanged.read_bytes() == recovery[2 if target.endswith(".md") else 3]
+
+
+@pytest.mark.parametrize("target", ["ask-library.md", "ask-library.json"])
+def test_restore_write_failure_rolls_back_pair_and_retains_backups(tmp_path, recovery, monkeypatch, target):
+    write_bytes = question_records.write_bytes
+
+    def fail_live_once(path, value):
+        if path.name == target and "recovery" not in path.parts:
+            raise OSError("Simulated live write failure")
+        write_bytes(path, value)
+
+    monkeypatch.setattr(question_records, "write_bytes", fail_live_once)
+    with pytest.raises(QuestionRecordError, match="원본 복원됨"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    snapshot, = (tmp_path / "questions" / "history" / "ask-library" / "recovery").iterdir()
+    assert (snapshot / "before.json").read_bytes() == recovery[2]
+    assert (snapshot / "before.md").read_bytes() == recovery[3]
+    assert json.loads((snapshot / "receipt.json").read_text(encoding="utf-8"))["status"] == "rolled_back"
+
+
+def test_restore_does_not_overwrite_external_edit_during_rollback(tmp_path, recovery, monkeypatch):
+    write_bytes = question_records.write_bytes
+    path = source_path(tmp_path, "ask-library.md")
+
+    def fail_markdown_after_external_edit(target, value):
+        if target == tmp_path / "ask-library.md":
+            path.write_bytes(b"External change\n")
+            raise OSError("Simulated write failure")
+        write_bytes(target, value)
+
+    monkeypatch.setattr(question_records, "write_bytes", fail_markdown_after_external_edit)
+    with pytest.raises(QuestionRecordError, match="롤백 확인 필요"):
+        recovery[-1]()
+    assert path.read_bytes() == b"External change\n"
+    assert (tmp_path / "ask-library.md").read_bytes() == recovery[3]
+
+
+def test_restore_preserves_publish_and_answer_protections(tmp_path, recovery):
+    restored = recovery[1]
+    with pytest.raises(QuestionRecordError, match="revision"):
+        publish_document(tmp_path, restored, 3)
+    newer = {**restored, "revision": 4}
+    with pytest.raises(QuestionRecordError, match="이력 변경은 answer"):
+        publish_document(tmp_path, newer, 3)
+    with pytest.raises(QuestionRecordError, match="revision"):
+        answer_document(tmp_path, "ask-library.md", restored["answers"][1])
+    with pytest.raises(QuestionRecordError, match="대상 문항이 없음"):
+        answer_document(tmp_path, "ask-library.md", restored["answers"][2])
+    assert_recovery_originals(tmp_path, recovery)
+
+
+def test_restore_backup_failure_keeps_live_pair_and_retry_uses_new_history(tmp_path, recovery, monkeypatch):
+    write_bytes = question_records.write_bytes
+
+    def fail_before_markdown(path, value):
+        if path.name == "before.md":
+            raise OSError("Simulated backup write failure")
+        write_bytes(path, value)
+
+    monkeypatch.setattr(question_records, "write_bytes", fail_before_markdown)
+    with pytest.raises(QuestionRecordError, match="백업 저장 실패"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    history = tmp_path / "questions" / "history" / "ask-library" / "recovery"
+    failed, = history.iterdir()
+    assert (failed / "before.json").read_bytes() == recovery[2]
+    monkeypatch.setattr(question_records, "write_bytes", write_bytes)
+    recovery[-1]()
+    assert len(list(history.iterdir())) == 2
+    assert (failed / "before.json").read_bytes() == recovery[2]
+
+
+def test_restore_cannot_add_legacy_markdown_when_absent(tmp_path, recovery):
+    current = copy.deepcopy(recovery[0])
+    current.pop("legacy_markdown")
+    path = source_path(tmp_path, "ask-library.md")
+    path.write_bytes(json.dumps(current).encode("utf-8"))
+    before = path.read_bytes()
+    with pytest.raises(QuestionRecordError, match="legacy_markdown"):
+        recovery[-1](expected_sha256=hashlib.sha256(before).hexdigest())
+    assert path.read_bytes() == before
+    assert (tmp_path / "ask-library.md").read_bytes() == recovery[3]
+
+
+def test_restore_accepts_evidenced_downgrade_and_rejects_mismatched_final_approval(tmp_path, recovery):
+    restored = copy.deepcopy(recovery[1])
+    restored["items"][0].update(status="pending", answer="")
+    restored["answers"][-1]["updates"].append({"id": "author", "status": "pending", "answer": ""})
+    restored["answers"][-1]["text"] += " Reconsider the author filter."
+    evidence = recovery[3] + b"\r\nExclude publisher. Approve the filter design. Reconsider the author filter.\r\n"
+    recovery[4].write_bytes(evidence)
+    (tmp_path / "ask-library.md").write_bytes(evidence)
+    wrong = copy.deepcopy(restored)
+    wrong["approval"] = {"status": "pending", "reason": "Another review."}
+    with pytest.raises(QuestionRecordError, match="승인 변경"):
+        recovery[-1](wrong)
+    assert recovery[-1](restored) == restored
+
+
+def test_restore_history_collision_never_overwrites_snapshot(tmp_path, recovery, monkeypatch):
+    fixed = datetime(2041, 2, 8, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz):
+            return fixed
+
+    monkeypatch.setattr(question_records, "datetime", FixedDatetime)
+    monkeypatch.setattr(question_records.uuid, "uuid4", lambda: SimpleNamespace(hex="fixed-id"))
+    history = tmp_path / "questions" / "history" / "ask-library" / "recovery" / "20410208T000000000000Z-fixed-id"
+    history.mkdir(parents=True)
+    snapshot = history / "before.json"
+    snapshot.write_bytes(b"Previously preserved bytes\n")
+    with pytest.raises(QuestionRecordError, match="백업 저장 실패"):
+        recovery[-1]()
+    assert snapshot.read_bytes() == b"Previously preserved bytes\n"
+    assert list(history.iterdir()) == [snapshot]
+    assert_recovery_originals(tmp_path, recovery)
+
+
+def test_restore_receipt_completion_failure_rolls_back_pair(tmp_path, recovery, monkeypatch):
+    write_json = question_records.write_json
+
+    def fail_completion(path, value):
+        if path.name == "receipt.json" and value["status"] == "complete":
+            raise OSError("Simulated receipt failure")
+        write_json(path, value)
+
+    monkeypatch.setattr(question_records, "write_json", fail_completion)
+    with pytest.raises(QuestionRecordError, match="원본 복원됨"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    snapshot, = (tmp_path / "questions" / "history" / "ask-library" / "recovery").iterdir()
+    assert json.loads((snapshot / "receipt.json").read_text(encoding="utf-8"))["status"] == "rolled_back"
+
+
+def test_restore_preserves_markdown_edit_between_live_replacements(tmp_path, recovery, monkeypatch):
+    write_bytes = question_records.write_bytes
+    path = source_path(tmp_path, "ask-library.md")
+    markdown = tmp_path / "ask-library.md"
+    external_markdown = b"# Library filters\n\nKeep the subject filter too.\n"
+
+    def edit_markdown_after_json(target, value):
+        write_bytes(target, value)
+        if target == path and value != recovery[2]:
+            markdown.write_bytes(external_markdown)
+
+    monkeypatch.setattr(question_records, "write_bytes", edit_markdown_after_json)
+    with pytest.raises(QuestionRecordError, match="현재 파일이 바뀜"):
+        recovery[-1]()
+    assert path.read_bytes() == recovery[2]
+    assert markdown.read_bytes() == external_markdown
+    snapshot, = (tmp_path / "questions" / "history" / "ask-library" / "recovery").iterdir()
+    assert (snapshot / "before.md").read_bytes() == recovery[3]
+    assert json.loads((snapshot / "receipt.json").read_text(encoding="utf-8"))["status"] == "rollback_failed"
+
+
+def test_restore_revalidates_containment_before_replacement_and_rollback(tmp_path, recovery, monkeypatch):
+    contained_path = question_records.contained_path
+    write_bytes = question_records.write_bytes
+    path = source_path(tmp_path, "ask-library.md")
+    json_replaced = False
+    rechecked = []
+
+    def invalidate_markdown_after_json(folder, *parts):
+        if json_replaced:
+            rechecked.append(parts)
+            if parts == ("ask-library.md",):
+                raise QuestionRecordError("미션 밖 질문 경로: changed Markdown target")
+        return contained_path(folder, *parts)
+
+    def track_json_replacement(target, value):
+        nonlocal json_replaced
+        write_bytes(target, value)
+        if target == path:
+            json_replaced = True
+
+    monkeypatch.setattr(question_records, "contained_path", invalidate_markdown_after_json)
+    monkeypatch.setattr(question_records, "write_bytes", track_json_replacement)
+    with pytest.raises(QuestionRecordError, match="미션 밖 질문 경로"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    assert ("questions", "ask-library.json") in rechecked
+    assert ("ask-library.md",) in rechecked

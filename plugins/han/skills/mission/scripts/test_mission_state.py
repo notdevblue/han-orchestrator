@@ -780,6 +780,42 @@ def test_question_cli_check_reports_missing_invalid_and_changed_records_with_act
     assert "기록 확인 필요" in status and "답 없음" not in status
 
 
+def test_question_cli_restore_uses_mission_lock_and_preserves_headers(opened, monkeypatch):
+    record = opened.publish_question("ask-library.md", title="Library filters")
+    source = opened.folder / "questions" / "ask-library.json"
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    markdown = opened.folder / "ask-library.md"
+    markdown.write_bytes(b"# Library filters\r\n\r\nKeep the author filter.\r\n")
+    original = opened.root / "saved-original.md"
+    original.write_bytes(markdown.read_bytes())
+    record["items"][0].update(status="answered", answer="Author filter retained.")
+    record["answers"].append({"schema": 1, "id": "library-choice", "revision": 1, "at": "2041-02-03",
+                              "text": "Keep the author filter.",
+                              "updates": [{"id": "1", "status": "answered", "answer": "Author filter retained."}]})
+    draft = opened.json_input("reviewed-library.json", record)
+    headers = {name: (opened.folder / name).read_bytes() for name in ("mission.md",)}
+    active = (opened.root / "state" / "ACTIVE").read_bytes()
+    locks = []
+    original_lock = mission_state.slots.FileLock
+
+    def tracked_lock(path, *args, **kwargs):
+        locks.append(Path(path).name)
+        return original_lock(path, *args, **kwargs)
+
+    monkeypatch.setattr(mission_state.slots, "FileLock", tracked_lock)
+    command = ("question", "restore", "--input", draft, "--source", str(original),
+               "--expect-revision", "1", "--expect-sha256", digest)
+    assert "질문 기록 복구" in opened.ok(*command)
+    assert locks == ["m1.lock"]
+    assert opened.ok("question", "check") == "질문 기록 정상: 1개"
+    assert mission_state.question_records.read_document(opened.folder, "ask-library.md") == record
+    assert (opened.root / "state" / "ACTIVE").read_bytes() == active
+    assert all((opened.folder / name).read_bytes() == content for name, content in headers.items())
+    saved = source.read_bytes(), markdown.read_bytes()
+    assert "expected_sha256" in opened.fail(*command)
+    assert (source.read_bytes(), markdown.read_bytes()) == saved
+
+
 def test_question_cli_revision_and_duplicate_reply_conflicts_preserve_files(opened):
     record = opened.publish_question()
     record["revision"] = 2

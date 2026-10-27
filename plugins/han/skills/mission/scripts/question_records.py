@@ -1,9 +1,10 @@
 import copy
+import hashlib
 import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from question_summary import QuestionItem, QuestionSummary
@@ -270,6 +271,130 @@ def write_text(path, text):
 
 def write_json(path, value):
     write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def write_bytes(path, value):
+    temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(value)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def replace_expected_bytes(folder, parts, expected, replacement):
+    path = contained_path(folder, *parts)
+    if path.read_bytes() != expected:
+        raise QuestionRecordError(f"복구 저장 전 현재 파일이 바뀜: {path}")
+    write_bytes(contained_path(folder, *parts), replacement)
+
+
+def validate_restoration(current, record, evidence):
+    if record["id"] != current["id"] or record["revision"] != current["revision"]:
+        raise QuestionRecordError("복구 id와 revision은 현재 정본과 같아야 함")
+    if record == current:
+        raise QuestionRecordError("복구 입력이 현재 정본과 같음; 새 복구 없이 question check로 확인할 것")
+    if record["answers"][:len(current["answers"])] != current["answers"]:
+        raise QuestionRecordError("복구는 기존 answers를 정확한 앞부분으로 보존해야 함")
+    if ("legacy_markdown" in record) != ("legacy_markdown" in current) or record.get("legacy_markdown") != current.get("legacy_markdown"):
+        raise QuestionRecordError("복구는 legacy_markdown 존재와 원문을 보존해야 함")
+    current_items = {item["id"]: item for item in current["items"]}
+    items = {item["id"]: item for item in record["items"]}
+    if not set(current_items).issubset(items):
+        raise QuestionRecordError("복구는 기존 문항 id를 모두 보존해야 함")
+    outcomes = {identifier: {field: item[field] for field in ("status", "answer")}
+                for identifier, item in current_items.items()}
+    approval = current["approval"]
+    evidence = normalize_markdown(evidence).strip()
+    for answer in record["answers"][len(current["answers"]):]:
+        if normalize_markdown(answer["text"]).strip() not in evidence:
+            raise QuestionRecordError(f"복구 답 원문이 Markdown 근거에 없음: {answer['id']}")
+        for update in answer["updates"]:
+            if update["id"] not in items:
+                raise QuestionRecordError(f"복구 답 대상 문항이 없음: {update['id']}")
+            outcomes[update["id"]] = {field: update[field] for field in ("status", "answer")}
+        if "approval" in answer:
+            approval = answer["approval"]
+    for identifier, item in items.items():
+        expected = outcomes.get(identifier, {"status": "pending", "answer": ""})
+        if any(item[field] != expected[field] for field in ("status", "answer")):
+            raise QuestionRecordError(f"복구 문항 상태와 답에 대응하는 추가 이력이 필요함: {identifier}")
+    if record["approval"] != approval:
+        raise QuestionRecordError("복구 승인 변경에 대응하는 추가 이력이 필요함")
+
+
+def restore_document(folder, input_path, source, expected_revision, expected_sha256):
+    try:
+        reviewed_bytes = Path(input_path).read_bytes()
+        record = validate_document(json.loads(reviewed_bytes.decode("utf-8-sig")))
+        evidence_bytes = Path(source).read_bytes()
+        evidence = evidence_bytes.decode("utf-8-sig")
+    except (OSError, ValueError) as error:
+        raise QuestionRecordError(f"복구 입력 읽기 실패: {error}") from error
+    name = f"{record['id']}.md"
+    path = source_path(folder, name)
+    markdown_path = contained_path(folder, name)
+    try:
+        original_json = path.read_bytes()
+        original_markdown = markdown_path.read_bytes()
+        current = validate_document(json.loads(original_json.decode("utf-8-sig")))
+    except (OSError, ValueError) as error:
+        raise QuestionRecordError(f"복구에는 유효한 기존 JSON과 Markdown이 필요함: {error}") from error
+    if type(expected_revision) is not int or current["revision"] != expected_revision:
+        raise QuestionRecordError("복구 expected_revision이 현재 revision과 다름")
+    if not isinstance(expected_sha256, str) or hashlib.sha256(original_json).hexdigest() != expected_sha256.lower():
+        raise QuestionRecordError("복구 expected_sha256이 현재 JSON과 다름")
+    if evidence_bytes != original_markdown:
+        raise QuestionRecordError("복구 source가 현재 Markdown 바이트와 다름")
+    validate_restoration(current, record, evidence)
+    restored_json = (json.dumps(record, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    restored_markdown = render_document(record).encode("utf-8")
+    repaired_at = datetime.now(timezone.utc)
+    history = contained_path(folder, "questions", "history", record["id"], "recovery",
+                             f"{repaired_at.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex}")
+    snapshots = {"before.json": original_json, "before.md": original_markdown,
+                 "input.json": reviewed_bytes, "after.json": restored_json, "after.md": restored_markdown}
+    receipt = {"schema": 1, "id": record["id"], "revision": record["revision"],
+               "repaired_at": repaired_at.isoformat(), "status": "prepared",
+               "sha256": {key: hashlib.sha256(value).hexdigest() for key, value in snapshots.items()}}
+    try:
+        history.mkdir(parents=True, exist_ok=False)
+        for filename, value in snapshots.items():
+            write_bytes(contained_path(folder, *history.relative_to(Path(folder).resolve()).parts, filename), value)
+        write_json(history / "receipt.json", receipt)
+        if path.read_bytes() != original_json or markdown_path.read_bytes() != original_markdown:
+            raise QuestionRecordError("복구 준비 중 현재 JSON 또는 Markdown이 바뀜")
+    except OSError as error:
+        raise QuestionRecordError(f"복구 백업 저장 실패: {history}: {error}") from error
+    live_targets = ((("questions", f"{record['id']}.json"), original_json, restored_json),
+                    ((name,), original_markdown, restored_markdown))
+    try:
+        for parts, original, restored in live_targets:
+            replace_expected_bytes(folder, parts, original, restored)
+        if any(contained_path(folder, *parts).read_bytes() != restored for parts, _, restored in live_targets):
+            raise QuestionRecordError("복구 저장 중 현재 JSON 또는 Markdown이 바뀜")
+        receipt["status"] = "complete"
+        write_json(history / "receipt.json", receipt)
+    except (OSError, QuestionRecordError) as error:
+        rollback_errors = []
+        for parts, original, restored in live_targets:
+            try:
+                live = contained_path(folder, *parts)
+                actual = live.read_bytes()
+                if actual == restored:
+                    replace_expected_bytes(folder, parts, restored, original)
+                elif actual != original:
+                    raise QuestionRecordError(f"외부 변경을 덮어쓸 수 없음: {live}")
+            except (OSError, QuestionRecordError) as rollback_error:
+                rollback_errors.append(str(rollback_error))
+        receipt["status"] = "rollback_failed" if rollback_errors else "rolled_back"
+        try:
+            write_json(history / "receipt.json", receipt)
+        except OSError as receipt_error:
+            rollback_errors.append(str(receipt_error))
+        detail = f"; 롤백 확인 필요: {'; '.join(rollback_errors)}" if rollback_errors else "; 원본 복원됨"
+        raise QuestionRecordError(f"질문 복구 저장 실패: {error}; 백업: {history}{detail}") from error
+    return record
 
 
 def render_saved_document(folder, name):
