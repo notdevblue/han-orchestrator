@@ -264,6 +264,7 @@ def test_installed_codex_hook_uses_config_registry_without_environment(project, 
     (installed / "hooks").mkdir()
     shutil.copy2(PLUGIN / "codex/mission_guard.py", installed / "codex/mission_guard.py")
     shutil.copy2(PLUGIN / "hooks/mission_guard.py", installed / "hooks/mission_guard.py")
+    shutil.copy2(PLUGIN / "hooks/question_write_guard.py", installed / "hooks/question_write_guard.py")
     registry = tmp_path / "registry"
     adapter_dir = registry / "test"
     adapter_dir.mkdir(parents=True)
@@ -426,6 +427,69 @@ def test_codex_status_reads_unshared_questions_without_a_valid_manifest(project)
     assert legacy.returncode == 0, legacy.stderr.decode("utf-8", errors="replace")
     assert "ask-legacy.md 기록 확인 필요" in legacy.stdout.decode("utf-8")
     assert "답 없음" not in legacy.stdout.decode("utf-8")
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_question_hook_registration_preserves_existing_hooks(runtime):
+    path = PLUGIN / ("hooks/hooks.json" if runtime == "claude" else "codex/hooks.json")
+    hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
+    for event in ("PreToolUse", "PostToolUse"):
+        matchers = {entry.get("matcher", "") for entry in hooks[event]}
+        for tool in ("Bash", "PowerShell", "Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch", "ApplyPatch"):
+            assert any(tool in matcher.split("|") for matcher in matchers)
+    for event in ("PostToolUse", "Stop"):
+        commands = [json.dumps(hook) for entry in hooks[event] for hook in entry["hooks"]]
+        assert any("question_integrity.py" in command for command in commands)
+        assert all(not hook.get("async", False) for entry in hooks[event] for hook in entry["hooks"])
+    assert "korean_reply.py" in json.dumps(hooks["Stop"])
+    assert "mission_guard.py" in json.dumps(hooks["PreToolUse"])
+    assert "session_rules.py" in json.dumps(hooks["SessionStart"])
+
+
+@pytest.mark.parametrize("event,tool_name", [("Stop", ""), ("PostToolUse", "Bash"), ("PostToolUse", "apply_patch")])
+def test_installed_codex_integrity_uses_config_registry_read_only(project, tmp_path, event, tool_name):
+    (project / ".codex/orchestrator/adapter.json").unlink()
+    installed = tmp_path / "installed/plugins/han"
+    paths = ("codex/question_integrity.py", "hooks/question_integrity.py", "hooks/question_write_guard.py", "hooks/mission_guard.py",
+             "skills/mission/scripts/mission_state.py", "skills/mission/scripts/verification.py", "skills/mission/scripts/question_records.py",
+             "skills/mission/scripts/question_summary.py", "skills/slots/scripts/slots.py")
+    for relative in paths:
+        target = installed / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(PLUGIN / relative, target)
+    registry = tmp_path / "registry"
+    adapter = registry / "fictional/adapter.json"
+    adapter.parent.mkdir(parents=True)
+    (registry / "projects.json").write_text(json.dumps([{"adapter": "fictional", "roots": [str(project)]}]), encoding="utf-8")
+    adapter.write_text(json.dumps({"schema": 1, "paths": {"stateDir": "state"}}), encoding="utf-8")
+    config_home = tmp_path / "codex-config"
+    config_home.mkdir()
+    (config_home / "config.toml").write_text(f'[shell_environment_policy.set]\nHAN_ADAPTERS_DIR = "{registry.as_posix()}"\n', encoding="utf-8")
+    folder = project / "state/fictional-mission"
+    folder.mkdir(parents=True)
+    (folder.parent / "ACTIVE").write_text(json.dumps({"id": folder.name, "session": "owner"}), encoding="utf-8")
+    (folder / "ask-colors.md").write_text("# Fictional garden palette\n\nUse blue.\n", encoding="utf-8")
+    log = tmp_path / "guard-log.jsonl"
+    env = {key: value for key, value in os.environ.items() if key not in ("HAN_ADAPTERS_DIR", "HAN_REPO", "CLAUDE_PROJECT_DIR")}
+    env.update(CODEX_HOME=str(config_home), HAN_GUARD_LOG=str(log))
+    payload = {"hook_event_name": event, "tool_name": tool_name, "session_id": "owner", "agent_id": "child", "cwd": str(project),
+               "tool_input": {"command": "*** Begin Patch\n*** End Patch"}, "stop_hook_active": True}
+
+    def run(fields):
+        done = subprocess.run([sys.executable, str(installed / "codex/question_integrity.py")], input=json.dumps(fields).encode(),
+                              capture_output=True, check=True, env=env, timeout=15)
+        return json.loads(done.stdout or b"{}")
+
+    before = {str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in folder.parent.rglob("*") if path.is_file()}
+    output = run(payload)
+    assert output["decision"] == "block" and "ask-colors.md" in output["reason"]
+    if event == "PostToolUse":
+        assert output["hookSpecificOutput"]["hookEventName"] == event
+    assert run({**payload, "session_id": "unrelated"}) == {}
+    after = {str(path): (path.read_bytes(), path.stat().st_mtime_ns) for path in folder.parent.rglob("*") if path.is_file()}
+    assert after == before
+    assert not log.exists()
+    assert not list(installed.rglob("__pycache__"))
 
 
 def test_shared_references_are_copies_of_claude_source():

@@ -13,13 +13,22 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch",
         "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/mission_guard.py\"", "timeout": 10 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch",
+        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/question_integrity.py\"", "timeout": 10 }]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/korean_reply.py\"", "timeout": 5 }]
+        "hooks": [
+          { "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/question_integrity.py\"", "timeout": 10 },
+          { "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/korean_reply.py\"", "timeout": 5 }
+        ]
       }
     ]
   }

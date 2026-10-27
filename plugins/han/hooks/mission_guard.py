@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+import question_write_guard
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import NamedTuple
@@ -1205,7 +1206,14 @@ def decide_write(payload):
 
 
 def decide(payload):
+    payload = question_write_guard.resolved_payload(payload)
     outcome = Outcome()
+    try:
+        outcome.deny = question_write_guard.question_write_reason(payload, sys.modules[__name__])
+    except GuardOff as e:
+        outcome.messages.append(f"질문 쓰기 가드 확인 실패: {e}")
+    if outcome.deny:
+        return outcome
     tool_name = payload.get("tool_name")
     if tool_name in WRITE_TOOLS:
         try:
@@ -1298,8 +1306,6 @@ def main(runtime="claude"):
             shell = str(tool_input.get("shell") or "").lower()
             if "powershell" in shell or "pwsh" in shell or (os.name == "nt" and not shell):
                 payload["tool_name"] = "PowerShell"
-            if tool_input.get("cwd"):
-                payload["cwd"] = os.path.abspath(os.path.join(payload.get("cwd") or os.getcwd(), tool_input["cwd"]))
         log_payload(payload)
         outcome = decide(payload)
     except GuardOff as e:

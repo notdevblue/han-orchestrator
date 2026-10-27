@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -126,5 +127,7 @@ def test_coordinator_write_off_without_active_or_setting(write_project):
 
 def test_hooks_json_routes_write_tools_to_guard():
     hooks = json.loads((Path(__file__).parent / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    matchers = [g["matcher"] for g in hooks for h in g["hooks"] if "mission_guard.py" in json.dumps(h)]
-    assert matchers == ["Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit"]
+    matchers = [group["matcher"] for group in hooks for hook in group["hooks"]
+                if hook.get("type") == "command" and "${CLAUDE_PLUGIN_ROOT}/hooks/mission_guard.py" in hook.get("args", [])]
+    for tool in ("Bash", "PowerShell", "Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch", "ApplyPatch"):
+        assert any(re.fullmatch(matcher, tool) for matcher in matchers), tool
