@@ -342,11 +342,14 @@ PARENT_SESSION_ENV = (
 
 AGENT_SHELL_ENV = ("TERM", "MSYSTEM", "SHELL")
 
+AGENT_TOOL_ENV = ("NO_COLOR", "GIT_TERMINAL_PROMPT")
+
 
 def launch_env():
     # 부모 세션 표식이 남으면 새 claude 가 자식 세션으로 보고 대화 기록을 안 남김
     # 에이전트 셸(git bash) 단말 표식이 남으면 새 탭 claude 가 mintty 로 보고 화면을 다르게 그림
-    dropped = PARENT_SESSION_ENV + AGENT_SHELL_ENV
+    # 에이전트 PowerShell 도구가 넣은 값이 남으면 새 탭 claude 가 흑백으로 뜨고 git 인증을 못 물음
+    dropped = PARENT_SESSION_ENV + AGENT_SHELL_ENV + AGENT_TOOL_ENV
     return {key: value for key, value in os.environ.items() if key.upper() not in dropped}
 
 
