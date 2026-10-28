@@ -28,7 +28,7 @@ def outcome(project, tool="Write", **tool_input):
 
 
 @pytest.mark.parametrize("tool,key", [("Write", "file_path"), ("Edit", "path"), ("MultiEdit", "file_path"), ("NotebookEdit", "notebook_path")])
-@pytest.mark.parametrize("target", ["state/mission/ask-1.md", "state/mission/confirm-A.md", "state/mission/questions/ask-1.json", "state/mission/questions/history/ask-1/r1.json", "state/mission/details/history/ask-1.md"])
+@pytest.mark.parametrize("target", ["state/mission/ask-1.md", "state/mission/confirm-A.md", "state/mission/questions/ask-1.json", "state/mission/questions/history/ask-1/r1.json"])
 def test_structured_new_and_existing_question_files(project, tool, key, target):
     assert outcome(project, tool, **{key: target}).deny
     path = project / target
@@ -67,10 +67,15 @@ def test_patch_allows_draft_and_detail(project):
 
 
 @pytest.mark.parametrize("target", ["state/mission/details", "state/mission/details/history"])
-def test_removing_parent_of_generated_history_is_protected(project, target):
-    history = project / "state/mission/details/history/ask-1.md"
+@pytest.mark.parametrize("source", ["confirm-A2.md", "questions/confirm-A2.json"])
+def test_removing_parent_of_generated_history_is_protected(project, target, source):
+    mission = project / "state/mission"
+    history = mission / "details/history/confirm-A2.md"
     history.parent.mkdir(parents=True)
-    history.write_text("# Generated palette history", encoding="utf-8")
+    history.write_text("# Generated example history", encoding="utf-8")
+    corresponding = mission / source
+    corresponding.parent.mkdir(parents=True, exist_ok=True)
+    corresponding.write_text("Example", encoding="utf-8")
     assert outcome(project, "Bash", command=f'rm -rf "{target}"').deny
 
 
@@ -79,6 +84,79 @@ def test_handwritten_history_remains_editable(project):
     history.parent.mkdir(parents=True)
     history.write_text("# Handwritten garden notes", encoding="utf-8")
     assert not outcome(project, "Bash", command='rm -rf "state/mission/details/history"').deny
+
+
+@pytest.mark.parametrize("sources", [(), ("confirm-A2.md",), ("questions/confirm-A2.json",), ("confirm-A2.md", "questions/confirm-A2.json")])
+@pytest.mark.parametrize("tool,key", [("Write", "file_path"), ("Edit", "path"), ("MultiEdit", "file_path"), ("NotebookEdit", "notebook_path")])
+def test_generated_history_requires_matching_root_or_record(project, sources, tool, key):
+    mission = project / "state/mission"
+    mission.mkdir(parents=True)
+    for name in sources:
+        source = mission / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("Example", encoding="utf-8")
+    target = "state/mission/details/history/confirm-A2.md"
+    assert bool(outcome(project, tool, **{key: target}).deny) == bool(sources)
+    history = project / target
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_text("# Example history", encoding="utf-8")
+    assert bool(outcome(project, tool, **{key: target}).deny) == bool(sources)
+
+
+@pytest.mark.parametrize("source", ["confirm-A2.md", "questions/confirm-A2.json"])
+@pytest.mark.parametrize("target", ["details/history/confirm-A2.md", "details", "details/history"])
+def test_mixed_case_mission_preserves_filesystem_case_for_history_protection(project, monkeypatch, source, target):
+    assert mission_guard.valid_mission_id("MyMission")
+    mission = project / "state/MyMission"
+    history = mission / "details/history/confirm-A2.md"
+    history.parent.mkdir(parents=True)
+    history.write_text("# Generated example history", encoding="utf-8")
+    corresponding = mission / source
+    corresponding.parent.mkdir(parents=True, exist_ok=True)
+    corresponding.write_text("Example", encoding="utf-8")
+    generated_history = question_write_guard.generated_history
+    queried = []
+
+    def check_filesystem_case(folder, name):
+        assert Path(folder).name == "MyMission"
+        queried.append((folder, name))
+        return generated_history(folder, name)
+
+    monkeypatch.setattr(question_write_guard, "generated_history", check_filesystem_case)
+    if target == "details/history/confirm-A2.md":
+        result = outcome(project, path=str(mission / target))
+    else:
+        result = outcome(project, "Bash", command=f'rm -rf "{mission / target}"')
+    assert result.deny and queried
+
+
+@pytest.mark.parametrize("name", ["confirm-A2.before-current-history.r11.md", "confirm-A2.details.before-current-history.r11.md", "notes.md"])
+@pytest.mark.parametrize("target", ["state/mission/details", "state/mission/details/history"])
+def test_original_history_names_are_editable_and_do_not_protect_parents(project, name, target):
+    mission = project / "state/mission"
+    history = mission / "details/history" / name
+    history.parent.mkdir(parents=True)
+    history.write_text("# Original example bytes", encoding="utf-8")
+    (mission / "confirm-A2.md").write_text("# Current example", encoding="utf-8")
+    assert not outcome(project, path=str(history)).deny
+    assert not outcome(project, "Bash", command=f'rm -rf "{target}"').deny
+
+
+def test_orphan_history_cannot_grant_automatic_document_sharing(project, monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "skills/mission/scripts"))
+    import mission_state
+
+    mission = project / "state/mission"
+    history = mission / "details/history/confirm-A2.md"
+    history.parent.mkdir(parents=True)
+    history.write_text("# Orphan example history", encoding="utf-8")
+    assert not outcome(project, path=str(history)).deny
+    for parent in (history.parent, history.parent.parent):
+        assert not outcome(project, "Bash", command=f'rm -rf "{parent}"').deny
+    assert not mission_state.auto_question_document(str(mission), "details/history/confirm-A2.md")
+    assert mission_state.auto_question_documents(str(mission)) == set()
+    assert outcome(project, path=str(mission / "confirm-A2.md")).deny
+    assert outcome(project, path=str(mission / "questions/confirm-A2.json")).deny
 
 
 def test_raw_patch_string_and_malformed_input(project):

@@ -99,35 +99,64 @@ def adapter_contexts(payload, targets, guard):
     return contexts
 
 
+def generated_history(folder, name):
+    if not QUESTION_NAME.fullmatch(name):
+        return False
+    root = canonical_path(folder)
+    sources = ((folder, name, root),
+               (os.path.join(folder, "questions"), name[:-3] + ".json", root + "/questions"))
+    for directory, filename, expected in sources:
+        if not os.path.isdir(directory) or canonical_path(directory) != expected:
+            continue
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name.casefold() == filename.casefold() and entry.is_file() and canonical_path(entry.path) == expected + "/" + filename.casefold():
+                    return True
+    return False
+
+
 def protected_path(target, cwd, contexts, guard):
     path = absolute_path(target, cwd)
-    candidates = {canonical_path(path), os.path.normpath(path).replace("\\", "/").rstrip("/").casefold()}
+    actual = os.path.normpath(os.path.realpath(path)).replace("\\", "/").rstrip("/")
+    lexical = os.path.normpath(path).replace("\\", "/").rstrip("/")
+    candidates = {(actual.casefold(), actual), (lexical.casefold(), lexical)}
     for located, adapter in contexts:
         state = guard.state_dir_of(located.project, adapter)
-        roots = {canonical_path(state), os.path.normpath(os.path.abspath(state)).replace("\\", "/").rstrip("/").casefold()}
-        for candidate in candidates:
-            for root in roots:
+        actual_root = os.path.normpath(os.path.realpath(state)).replace("\\", "/").rstrip("/")
+        lexical_root = os.path.normpath(os.path.abspath(state)).replace("\\", "/").rstrip("/")
+        roots = {(actual_root.casefold(), actual_root), (lexical_root.casefold(), lexical_root)}
+        for candidate, filesystem_path in candidates:
+            for root, filesystem_root in roots:
                 if not candidate.startswith(root + "/"):
                     continue
                 parts = candidate[len(root) + 1:].split("/")
-                generated_history = len(parts) == 4 and parts[1:3] == ["details", "history"] and QUESTION_NAME.fullmatch(parts[3])
-                if len(parts) >= 2 and (parts[1] == "questions" or (len(parts) == 2 and QUESTION_NAME.fullmatch(parts[1])) or generated_history):
+                history = False
+                if len(parts) == 4 and parts[1:3] == ["details", "history"]:
+                    filesystem_parts = filesystem_path.split("/")[len(filesystem_root.split("/")):]
+                    history = generated_history(os.path.join(filesystem_root, filesystem_parts[0]), filesystem_parts[3])
+                if len(parts) >= 2 and (parts[1] == "questions" or (len(parts) == 2 and QUESTION_NAME.fullmatch(parts[1])) or history):
                     return True
     return False
 
 
 def protected_tree(target, cwd, contexts, guard):
-    path = canonical_path(absolute_path(target, cwd))
+    filesystem_path = os.path.normpath(os.path.realpath(absolute_path(target, cwd))).replace("\\", "/").rstrip("/")
+    path = filesystem_path.casefold()
     for located, adapter in contexts:
         state_dir = guard.state_dir_of(located.project, adapter)
         state = canonical_path(state_dir)
         if path.startswith(state + "/"):
             parts = path[len(state) + 1:].split("/")
             if parts[1:] in (["details"], ["details", "history"]):
-                directory = os.path.join(state_dir, parts[0], "details", "history")
+                filesystem_root = os.path.normpath(os.path.realpath(state_dir)).replace("\\", "/").rstrip("/")
+                filesystem_parts = filesystem_path.split("/")[len(filesystem_root.split("/")):]
+                mission = os.path.join(filesystem_root, filesystem_parts[0])
+                directory = filesystem_path
+                if len(parts) == 2:
+                    directory = os.path.join(filesystem_path, "history")
                 if os.path.isdir(directory):
                     with os.scandir(directory) as histories:
-                        if any(QUESTION_NAME.fullmatch(child.name) for child in histories):
+                        if any(generated_history(mission, child.name) for child in histories):
                             return True
         ancestor = path == state or state.startswith(path + "/")
         mission_root = path.startswith(state + "/") and "/" not in path[len(state) + 1:]
