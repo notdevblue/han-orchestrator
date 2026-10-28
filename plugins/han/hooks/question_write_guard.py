@@ -110,7 +110,8 @@ def protected_path(target, cwd, contexts, guard):
                 if not candidate.startswith(root + "/"):
                     continue
                 parts = candidate[len(root) + 1:].split("/")
-                if len(parts) >= 2 and (parts[1] == "questions" or (len(parts) == 2 and QUESTION_NAME.fullmatch(parts[1]))):
+                generated_history = len(parts) == 4 and parts[1:3] == ["details", "history"] and QUESTION_NAME.fullmatch(parts[3])
+                if len(parts) >= 2 and (parts[1] == "questions" or (len(parts) == 2 and QUESTION_NAME.fullmatch(parts[1])) or generated_history):
                     return True
     return False
 
@@ -120,6 +121,14 @@ def protected_tree(target, cwd, contexts, guard):
     for located, adapter in contexts:
         state_dir = guard.state_dir_of(located.project, adapter)
         state = canonical_path(state_dir)
+        if path.startswith(state + "/"):
+            parts = path[len(state) + 1:].split("/")
+            if parts[1:] in (["details"], ["details", "history"]):
+                directory = os.path.join(state_dir, parts[0], "details", "history")
+                if os.path.isdir(directory):
+                    with os.scandir(directory) as histories:
+                        if any(QUESTION_NAME.fullmatch(child.name) for child in histories):
+                            return True
         ancestor = path == state or state.startswith(path + "/")
         mission_root = path.startswith(state + "/") and "/" not in path[len(state) + 1:]
         if not ancestor and not mission_root:

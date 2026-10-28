@@ -509,9 +509,9 @@ def test_questions_remain_visible_after_edits_hiding_and_markdown_deletion(opene
     opened.publish_question()
     assert mission_state.shared_documents(str(opened.folder)) == set()
     assert opened.ok("status").endswith("걸린 것: ask-1.md 답 없음")
-    assert opened.ok("document", "list") == "공유 중: 없음\n자동 표시: ask-1.md"
+    assert opened.ok("document", "list") == "공유 중: 없음\n자동 표시: ask-1.md, details/history/ask-1.md"
     assert opened.ok("document", "share", "ask-1.md") == "공유함: ask-1.md"
-    assert opened.ok("document", "list") == "공유 중: ask-1.md\n자동 표시: ask-1.md"
+    assert opened.ok("document", "list") == "공유 중: ask-1.md\n자동 표시: ask-1.md, details/history/ask-1.md"
     question.write_text("# 질문 수정\n", encoding="utf-8")
     assert mission_state.shared_documents(str(opened.folder)) == set()
     assert opened.ok("status").endswith("걸린 것: ask-1.md 기록 확인 필요")
@@ -539,7 +539,7 @@ def test_document_share_validates_all_paths_before_writing_manifest(opened):
         assert opened.fail("document", "share", name)
         assert not before.exists()
     nested = opened.folder / "details" / "ask-1.md"
-    nested.parent.mkdir()
+    nested.parent.mkdir(exist_ok=True)
     nested.write_text("nested", encoding="utf-8")
     assert opened.ok("document", "share", "ask-1.md", "details/ask-1.md") == "공유함: ask-1.md, details/ask-1.md"
     assert mission_state.shared_documents(str(opened.folder)) == {"ask-1.md", "details/ask-1.md"}
@@ -579,16 +579,16 @@ def test_document_manifest_corruption_fails_closed_and_missing_entries_are_stale
     assert opened.ok("status").endswith("걸린 것: ask-1.md 답 없음")
     manifest.write_text("path\tsha256\tat\nmissing.md\t" + "0" * 64 + "\t2026-10-22T00:00:00+09:00\n", encoding="utf-8")
     assert mission_state.shared_documents(str(opened.folder)) == set()
-    assert opened.ok("document", "list") == "공유 중: 없음\n자동 표시: ask-1.md"
+    assert opened.ok("document", "list") == "공유 중: 없음\n자동 표시: ask-1.md, details/history/ask-1.md"
 
 
 def test_auto_questions_include_only_root_documents_and_matching_details(opened):
-    files = ["ask-1.md", "confirm-B.md", "details/ask-1.md", "details/confirm-B.md", "details/ask-orphan.md", "nested/ask-private.md", "ask-folder/private.md", ".ask-hidden.md"]
+    files = ["ask-1.md", "confirm-B.md", "details/ask-1.md", "details/confirm-B.md", "details/history/ask-1.md", "details/history/confirm-B.md", "details/history/ask-orphan.md", "details/history/notes.md", "questions/history/ask-1/1.json", "details/ask-orphan.md", "nested/ask-private.md", "ask-folder/private.md", ".ask-hidden.md"]
     for name in files:
         path = opened.folder / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# 질문\n", encoding="utf-8")
-    expected = {"ask-1.md", "confirm-B.md", "details/ask-1.md", "details/confirm-B.md"}
+    expected = {"ask-1.md", "confirm-B.md", "details/ask-1.md", "details/confirm-B.md", "details/history/ask-1.md", "details/history/confirm-B.md"}
     assert mission_state.auto_question_documents(str(opened.folder)) == expected
     for name in files:
         assert mission_state.auto_question_document(str(opened.folder), name) == (name in expected)

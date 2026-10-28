@@ -74,6 +74,8 @@ def read_document(path):
 
 
 def check_record_history(record, source_record, issues):
+    if record["id"] != source_record["id"]:
+        issues.append("원문과 질문 문서 id가 다릅니다")
     source_answers = source_record["answers"]
     if record["answers"][:len(source_answers)] != source_answers:
         issues.append("기존 답 원문 이력이 삭제되거나 달라졌습니다")
@@ -85,7 +87,7 @@ def check_migration(record, text, source_path, issues):
     original = source_path.read_bytes().decode("utf-8")
     if "legacy_markdown" not in record or record["legacy_markdown"] != original:
         issues.append("legacy_markdown이 원문 Markdown과 다릅니다: BOM과 줄바꿈까지 그대로 보존하세요")
-    rendered = question_records.normalize_markdown(text)
+    rendered = question_records.normalize_markdown(question_records.render_record_history(record))
     for body, dates in answer_bodies(original):
         matching_answers = [item for item in record["answers"] if body in question_records.normalize_markdown(item["text"])]
         if not matching_answers or body not in rendered:
@@ -116,13 +118,26 @@ def prose_length(text):
     return len(text.strip())
 
 
-def check(path, source_path=None):
+def check(path, source_path="", archive_path=""):
     text = ""
     issues = []
     try:
         text, record = read_document(path)
         if source_path:
             source, source_record = read_document(source_path)
+            archived = False
+            candidate = archive_path
+            if not candidate and source_record and source_path.parent.name == "questions" and source_path.name == f"{source_record['id']}.json":
+                inferred = question_records.history_path(source_path.parent.parent, f"{source_record['id']}.md")
+                if inferred.exists():
+                    candidate = inferred
+            if candidate:
+                try:
+                    if not source_record or (record and source_record["id"] != record["id"]):
+                        raise question_records.QuestionRecordError("전체 이력 보존 검사는 같은 질문 id의 JSON 원문이 필요함")
+                    archived = question_records.validate_history_archive(candidate, source_record)
+                except (question_records.QuestionRecordError, OSError, UnicodeError) as error:
+                    issues.append(f"전체 이력 보존 검사 실패: {error}")
             if path.suffix.lower() == ".json":
                 if source_path.suffix.lower() == ".json":
                     check_record_history(record, source_record, issues)
@@ -134,9 +149,14 @@ def check(path, source_path=None):
             elif answer(source) != answer(text):
                 issues.append("기존 답 절이 달라졌습니다: 원문의 답과 날짜를 그대로 보존하세요")
             current_tables = schema_tables(text)
-            for number, table in enumerate(schema_tables(source), 1):
-                if table not in current_tables:
+            source_tables = source
+            if source_record:
+                source_tables = question_records.render_record_history(source_record)
+            for number, table in enumerate(schema_tables(source_tables), 1):
+                if table not in current_tables and (not archived or not current_tables):
                     issues.append(f"원문 설계 표 {number}의 컬럼·타입·조건이 빠지거나 달라졌습니다")
+        elif archive_path:
+            issues.append("전체 이력 보존 검사에는 --source가 필요합니다")
     except (question_records.QuestionRecordError, OSError, UnicodeError) as error:
         issues.append(f"문서 검사 실패: {error}")
     return {"path": str(path), "prose_characters": prose_length(text), "issues": issues, "semantic_review_required": True}
@@ -146,8 +166,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="사람용 문서의 설계 표·기존 답을 검사합니다. 문체와 의미 대조는 별도입니다.")
     parser.add_argument("path", type=Path)
     parser.add_argument("--source", type=Path)
+    parser.add_argument("--archive", type=Path, help="정본과 대조할 details/history/<id>.md 전체 이력")
     args = parser.parse_args(argv)
-    result = check(args.path, args.source)
+    result = check(args.path, args.source, args.archive)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return int(bool(result["issues"]))
 

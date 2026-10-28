@@ -12,6 +12,7 @@ import check_human_doc
 
 
 SCHEMA_TABLE = "| 컬럼 | 타입 |\n| --- | --- |\n| Id | long |"
+CURRENT_TABLE = "| 필드 | 타입 |\n| --- | --- |\n| Color | string |"
 ANSWER_TEXT = "2026-10-20 승인\n\n1번은 권장대로 진행.\n날짜와 원문을 유지."
 
 
@@ -253,3 +254,85 @@ def test_damaged_json_is_reported_as_cli_failure_without_traceback(tmp_path, cap
     output = capsys.readouterr()
     assert json.loads(output.out)["issues"]
     assert not output.err
+
+
+def test_revision_can_retire_old_design_only_after_actual_archive_verification(tmp_path):
+    record = document()
+    check_human_doc.question_records.publish_document(tmp_path, record)
+    source = tmp_path / "questions/confirm-A.json"
+    revised = copy.deepcopy(record)
+    revised.update(revision=2, body="## Current shape\n\n" + CURRENT_TABLE)
+    target = write_record(tmp_path / "draft.json", revised)
+    assert not check_human_doc.check(target, source)["issues"]
+    archive = check_human_doc.question_records.history_path(tmp_path, "confirm-A.md")
+    archive.unlink()
+    assert any("설계 표" in issue for issue in check_human_doc.check(target, source)["issues"])
+    assert any("전체 이력" in issue for issue in check_human_doc.check(target, source, archive)["issues"])
+
+
+@pytest.mark.parametrize("change", ["tampered", "wrong-document", "wrong-revision", "arbitrary-path", "damaged-snapshot"])
+def test_archive_cannot_exempt_loss_when_content_identity_revision_or_path_is_wrong(tmp_path, change):
+    records = check_human_doc.question_records
+    original = document()
+    records.publish_document(tmp_path, original)
+    source = write_record(tmp_path / "original.json", original)
+    revised = copy.deepcopy(original)
+    revised.update(revision=2, body=CURRENT_TABLE)
+    target = write_record(tmp_path / "draft.json", revised)
+    archive = records.history_path(tmp_path, "confirm-A.md")
+    if change == "tampered":
+        archive.write_text("# Missing original design", encoding="utf-8")
+    elif change == "wrong-document":
+        another = copy.deepcopy(original)
+        another["id"] = "confirm-B"
+        records.publish_document(tmp_path, another)
+        archive = records.history_path(tmp_path, "confirm-B.md")
+    elif change == "wrong-revision":
+        original["revision"] = 9
+        write_record(source, original)
+    elif change == "arbitrary-path":
+        copied = tmp_path / "copied.md"
+        copied.write_bytes(archive.read_bytes())
+        archive = copied
+    else:
+        newer = copy.deepcopy(original)
+        newer.update(revision=2, title="Second wording")
+        records.publish_document(tmp_path, newer, 1, editorial=True)
+        snapshot = tmp_path / "questions/history/confirm-A/1.json"
+        damaged = copy.deepcopy(original)
+        damaged["body"] = "Changed original field."
+        write_record(snapshot, damaged)
+    issues = check_human_doc.check(target, source, archive)["issues"]
+    assert any("전체 이력" in issue for issue in issues)
+    assert any("설계 표" in issue for issue in issues)
+
+
+def test_explicit_archive_checks_unpublished_draft_and_prior_revision_snapshot(tmp_path, capsys):
+    records = check_human_doc.question_records
+    original = document()
+    records.publish_document(tmp_path, original)
+    old_source = write_record(tmp_path / "original.json", original)
+    revised = copy.deepcopy(original)
+    revised.update(revision=2, body=CURRENT_TABLE)
+    revised["approval"] = {"status": "pending", "reason": "Review the new design."}
+    draft = write_record(tmp_path / "draft.json", revised)
+    archive = records.history_path(tmp_path, "confirm-A.md")
+    assert check_human_doc.main([str(draft), "--source", str(old_source), "--archive", str(archive)]) == 0
+    assert not json.loads(capsys.readouterr().out)["issues"]
+    records.publish_document(tmp_path, revised, 1)
+    assert not check_human_doc.check(draft, old_source, archive)["issues"]
+    generated = tmp_path / "confirm-A.md"
+    assert not check_human_doc.check(generated, tmp_path / "questions/confirm-A.json")["issues"]
+
+
+@pytest.mark.parametrize("body", ["", "## Current plan\n\nThe old design is only in history."])
+def test_verified_archive_does_not_allow_removing_every_current_design_table(tmp_path, body):
+    records = check_human_doc.question_records
+    original = document()
+    records.publish_document(tmp_path, original)
+    revised = copy.deepcopy(original)
+    revised.update(revision=2, body=body)
+    target = write_record(tmp_path / "draft.json", revised)
+    archive = records.history_path(tmp_path, "confirm-A.md")
+    assert records.validate_history_archive(archive, original)
+    assert any("설계 표" in issue for issue in check_human_doc.check(target, tmp_path / "questions/confirm-A.json", archive)["issues"])

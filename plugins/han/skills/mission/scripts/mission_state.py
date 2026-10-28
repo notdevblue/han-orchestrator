@@ -209,6 +209,8 @@ def auto_question_document(folder, name):
             return True
         if len(parts) == 2 and parts[0] == "details" and QUESTION_FILE.fullmatch(parts[1]):
             return auto_question_document(folder, parts[1])
+        if len(parts) == 3 and parts[:2] == ["details", "history"] and QUESTION_FILE.fullmatch(parts[2]):
+            return auto_question_document(folder, parts[2])
         return False
     except (OSError, ValueError, StateError):
         return False
@@ -222,6 +224,9 @@ def auto_question_documents(folder):
             detail = f"details/{name}"
             if auto_question_document(folder, detail):
                 names.add(detail)
+            history = f"details/history/{name}"
+            if auto_question_document(folder, history):
+                names.add(history)
     return names
 
 

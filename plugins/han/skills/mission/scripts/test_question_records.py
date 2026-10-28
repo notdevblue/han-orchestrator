@@ -65,8 +65,10 @@ def test_recommended_and_alternative_answers_preserve_raw_text_and_explicit_stat
     assert [(item.number, item.status) for item in summary.items] == [("1", "answered"), ("2", "answered")]
     assert saved["revision"] == record["revision"] == 1
     assert saved["answers"] == [payload]
-    assert payload["text"] in render_document(saved)
-    assert "답 내용:\n\n권장" in render_document(saved)
+    assert payload["text"] not in render_document(saved)
+    assert payload["text"] in question_records.history_path(tmp_path, "ask-1.md").read_text(encoding="utf-8")
+    assert "## 현재 결과" not in render_document(saved)
+    assert "완료한 결정" not in render_document(saved)
 
 
 def test_partial_answer_withdrawal_and_separate_approval(tmp_path):
@@ -96,14 +98,90 @@ def test_render_labels_separate_approval_request_without_changing_original_appro
     payload["approval"] = {"status": "complete", "reason": "추가 요청 승인"}
     saved = answer_document(tmp_path, "confirm-A.md", payload)
     text = render_document(saved)
-    assert text.count("별도 승인 요청: 승인 완료") == 2
+    assert text.count("별도 승인 요청: 승인 완료") == 1
     assert "확인 A 전체 승인: 승인 완료" in text
-    assert payload["text"] in text
+    assert payload["text"] not in text
+    assert payload["text"] in question_records.history_path(tmp_path, "confirm-A.md").read_text(encoding="utf-8")
     assert saved["answers"][0]["text"] == payload["text"]
     saved["approval"] = {"status": "none", "reason": ""}
     assert "별도 승인 요청: 없음" in render_document(saved)
     saved["approval"] = {"status": "pending", "reason": "추가 확인"}
     assert "별도 승인 요청: 승인 대기" in render_document(saved)
+
+
+def test_current_view_keeps_pending_options_and_current_design_before_completed_results(tmp_path):
+    record = document()
+    record["items"][0].update(status="answered", answer="Keep the blue border.")
+    record["items"][0]["body"] = "Past choices: blue or green."
+    record["items"][1]["body"] = "Pending choices: circle or square."
+    record["body"] = "## Current contract\n\n| 필드 | 타입 |\n| --- | --- |\n| Shape | string |"
+    record["legacy_markdown"] = "# Original palette\r\n"
+    publish_document(tmp_path, record)
+    current = render_document(record)
+    assert "Past choices" not in current and record["legacy_markdown"] not in current
+    assert current.index(record["intro"]) < current.index("Pending choices") < current.index(record["body"]) < current.index("## 전체 이력")
+    assert "Keep the blue border." not in current and "## 현재 결과" not in current
+    assert "details/history/ask-1.md" in current
+    archive = question_records.history_path(tmp_path, "ask-1.md").read_bytes().decode("utf-8")
+    assert "Past choices: blue or green." in archive and record["legacy_markdown"] in archive
+    assert question_records.validate_history_archive(question_records.history_path(tmp_path, "ask-1.md"), record)
+
+
+def test_history_deduplicates_raw_answers_and_legacy_while_linking_each_revision(tmp_path):
+    record = document()
+    record["legacy_markdown"] = "# Original fictional palette\r\nExact legacy text.\r\n"
+    publish_document(tmp_path, record)
+    saved = answer_document(tmp_path, "ask-1.md", answer(updates=[{"id": "1", "status": "answered", "answer": "Blue."}]))
+    revised = copy.deepcopy(saved)
+    revised.update(revision=2, title="Reworded palette")
+    publish_document(tmp_path, revised, 1, editorial=True)
+    archive = question_records.history_path(tmp_path, "ask-1.md").read_bytes().decode("utf-8")
+    assert archive.count(record["legacy_markdown"]) == 1
+    assert archive.count(saved["answers"][0]["text"]) == 1
+    assert archive.count("이 개정의 답 기록: `reply-1` (대상 개정 1)") == 2
+    assert "## 개정 1" in archive and "## 개정 2" in archive
+
+
+def test_history_revisions_are_ordered_by_number_instead_of_filename(tmp_path):
+    record = document()
+    record["revision"] = 2
+    publish_document(tmp_path, record)
+    later = copy.deepcopy(record)
+    later.update(revision=10, title="Tenth fictional revision")
+    publish_document(tmp_path, later, 2, editorial=True)
+    current = copy.deepcopy(later)
+    current.update(revision=11, title="Eleventh fictional revision")
+    publish_document(tmp_path, current, 10, editorial=True)
+    assert [snapshot["revision"] for snapshot in question_records.history_records(tmp_path, current)] == [2, 10, 11]
+    archive = question_records.render_history_document(tmp_path, current)
+    assert archive.index("## 개정 2") < archive.index("## 개정 10") < archive.index("## 개정 11")
+
+
+def test_completed_and_withdrawn_answers_are_only_in_history_unless_author_puts_results_in_body(tmp_path):
+    record = document()
+    record["items"][0].update(title="1. Blue border", status="answered", answer="Recommended.\nRetain the curved edge.")
+    record["items"][1].update(status="withdrawn", answer="Drop the optional flag.")
+    record["body"] = "## Current design\n\nUse blue with the curved edge."
+    publish_document(tmp_path, record)
+    text = render_document(record)
+    assert "1. 1." not in text
+    assert record["body"] in text
+    assert record["items"][0]["answer"] not in text and record["items"][1]["answer"] not in text
+    history = question_records.render_history_document(tmp_path, record)
+    assert record["items"][0]["answer"] in history and record["items"][1]["answer"] in history
+
+
+@pytest.mark.parametrize("change", ["missing", "tampered"])
+def test_inspection_rejects_missing_or_changed_generated_history_and_render_repairs_it(tmp_path, change):
+    record = publish_document(tmp_path, document())
+    archive = question_records.history_path(tmp_path, "ask-1.md")
+    if change == "missing":
+        archive.unlink()
+    else:
+        archive.write_text("Changed archived answer", encoding="utf-8")
+    assert inspect_document(tmp_path, "ask-1.md", render_document(record))[1]
+    render_saved_document(tmp_path, "ask-1.md")
+    assert not inspect_document(tmp_path, "ask-1.md", render_document(record))[1]
 
 
 @pytest.mark.parametrize("change", [
@@ -826,3 +904,76 @@ def test_restore_revalidates_containment_before_replacement_and_rollback(tmp_pat
     assert_recovery_originals(tmp_path, recovery)
     assert ("questions", "ask-library.json") in rechecked
     assert ("ask-library.md",) in rechecked
+
+
+@pytest.mark.parametrize("archive_existed", [True, False])
+def test_restore_backs_up_generated_history_and_can_create_it_for_older_records(tmp_path, recovery, archive_existed):
+    archive = question_records.history_path(tmp_path, "ask-library.md")
+    original = archive.read_bytes()
+    if not archive_existed:
+        archive.unlink()
+        original = b""
+    recovery[-1]()
+    snapshot, = (tmp_path / "questions/history/ask-library/recovery").iterdir()
+    receipt = json.loads((snapshot / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["before_history_existed"] == archive_existed
+    assert (snapshot / "before-history.md").read_bytes() == original
+    assert (snapshot / "after-history.md").read_bytes() == archive.read_bytes()
+    assert question_records.validate_history_archive(archive, recovery[0])
+    assert question_records.validate_history_archive(archive, recovery[1])
+    assert "## Approved filter design" in archive.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("archive_existed", [True, False])
+def test_restore_completion_failure_restores_history_bytes_or_removes_new_file(tmp_path, recovery, monkeypatch, archive_existed):
+    archive = question_records.history_path(tmp_path, "ask-library.md")
+    original = archive.read_bytes()
+    if not archive_existed:
+        archive.unlink()
+    write_json = question_records.write_json
+
+    def fail_completion(path, value):
+        if path.name == "receipt.json" and value["status"] == "complete":
+            raise OSError("Simulated completion failure")
+        write_json(path, value)
+
+    monkeypatch.setattr(question_records, "write_json", fail_completion)
+    with pytest.raises(QuestionRecordError, match="원본 복원됨"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    assert archive.exists() == archive_existed
+    if archive_existed:
+        assert archive.read_bytes() == original
+
+
+def test_restore_detects_external_history_change_after_backups(tmp_path, recovery, monkeypatch):
+    archive = question_records.history_path(tmp_path, "ask-library.md")
+    write_json = question_records.write_json
+
+    def change_archive(path, value):
+        write_json(path, value)
+        if path.name == "receipt.json":
+            archive.write_bytes(b"External history edit")
+
+    monkeypatch.setattr(question_records, "write_json", change_archive)
+    with pytest.raises(QuestionRecordError, match="준비 중 현재 전체 이력"):
+        recovery[-1]()
+    assert archive.read_bytes() == b"External history edit"
+    assert_recovery_originals(tmp_path, recovery)
+
+
+def test_restore_history_write_failure_rolls_back_other_targets(tmp_path, recovery, monkeypatch):
+    archive = question_records.history_path(tmp_path, "ask-library.md")
+    original = archive.read_bytes()
+    write_bytes = question_records.write_bytes
+
+    def fail_history(path, value):
+        if path == archive:
+            raise OSError("Simulated history write failure")
+        write_bytes(path, value)
+
+    monkeypatch.setattr(question_records, "write_bytes", fail_history)
+    with pytest.raises(QuestionRecordError, match="원본 복원됨"):
+        recovery[-1]()
+    assert_recovery_originals(tmp_path, recovery)
+    assert archive.read_bytes() == original

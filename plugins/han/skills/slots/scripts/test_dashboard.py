@@ -117,21 +117,42 @@ def detail_records():
 
 
 def write_question(folder, name, title, items, approval="none", answer="", intro="", body=""):
+    previous = {}
+    if question_records.source_path(folder, name).exists():
+        previous = question_records.read_document(folder, name)
+    revision = previous.get("revision", 0) + 1
     record = {
-        "schema": 1, "id": name[:-3], "revision": 1, "title": title, "intro": intro, "body": body,
-        "items": [{"id": str(number), "title": item_title, "body": "", "status": status,
-                   "answer": answer if status != "pending" else ""}
+        "schema": 1, "id": name[:-3], "revision": revision, "title": title, "intro": intro, "body": body,
+        "items": [{"id": str(number), "title": item_title, "body": "", "status": "pending", "answer": ""}
                   for number, (item_title, status) in enumerate(items, 1)],
-        "approval": {"status": approval, "reason": "최종 승인 필요" if approval == "pending" else ""},
-        "answers": [],
+        "approval": previous.get("approval", {"status": "none", "reason": ""}),
+        "answers": previous.get("answers", []),
     }
-    if answer:
-        record["answers"].append({"schema": 1, "id": "answer-1", "revision": 1,
-                                  "at": "2026-10-26T10:00:00+09:00", "text": answer, "updates": []})
-    (folder / "questions").mkdir(exist_ok=True)
-    (folder / "questions" / f"{name[:-3]}.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-    (folder / name).write_text(question_records.render_document(record), encoding="utf-8")
-    return record
+    if "legacy_markdown" in previous:
+        record["legacy_markdown"] = previous["legacy_markdown"]
+    elif not previous and (folder / name).exists():
+        record["legacy_markdown"] = (folder / name).read_bytes().decode("utf-8")
+    expected_revision = ""
+    if previous:
+        expected_revision = previous["revision"]
+    question_records.publish_document(folder, record, expected_revision)
+    reason = ""
+    if approval == "pending":
+        reason = "최종 승인 필요"
+    raw_answer = answer
+    if not raw_answer:
+        raw_answer = "Record the fictional question states."
+    updates = []
+    for item, (_, status) in zip(record["items"], items):
+        value = ""
+        if status != "pending":
+            value = answer
+        updates.append({"id": item["id"], "status": status, "answer": value})
+    return question_records.answer_document(folder, name, {
+        "schema": 1, "id": f"answer-{revision}", "revision": revision,
+        "at": "2026-10-26T10:00:00+09:00", "text": raw_answer, "updates": updates,
+        "approval": {"status": approval, "reason": reason},
+    })
 
 
 class World:
@@ -501,8 +522,9 @@ def test_skeleton_confirm_is_waiting_and_labelled(world):
     write_question(folder, "confirm-A1.md", "확인 A1", [("이전 결정", "answered")], answer="승인")
     record = write_question(folder, "confirm-A2.md", "확인 A2", [("뼈대 확인", "pending")], approval="pending", body="## 뼈대 — 바꾸는 Model\n\n| 칸 |")
     record["items"][0]["id"] = "scope"
+    record["answers"][-1]["updates"][0]["id"] = "scope"
     (folder / "questions/confirm-A2.json").write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-    (folder / "confirm-A2.md").write_text(question_records.render_document(record), encoding="utf-8")
+    question_records.render_saved_document(folder, "confirm-A2.md")
     (folder / "mission.md").write_text("# 미션 run-1\n\n상태: 진행\n현재 단계: poc\n확인 A: A1승인\n", encoding="utf-8")
     status, text = world.get("/")
     assert status == 200 and "확인 A2 · 뼈대" in text and "confirm-A1.md" not in text
@@ -672,6 +694,11 @@ def test_question_documents_are_automatic_and_other_documents_require_current_sh
         assert name in overview and name in detail
         assert get(dashboard.view_url(folder / name))[0] == 200
         assert get(dashboard.raw_url(folder / name))[0] == 200
+    for name in ("details/history/ask-1.md", "details/history/confirm-B.md"):
+        assert name in detail
+        assert get(dashboard.view_url(folder / name))[0] == 200
+        assert get(dashboard.raw_url(folder / name))[0] == 200
+    assert get(dashboard.raw_url(folder / "questions/ask-1.json"))[0] == 404
     for name in [name for name in [*files, "report.md"] if name not in automatic]:
         assert name not in overview and name not in detail
         for url in (dashboard.view_url(folder / name), dashboard.raw_url(folder / name)):
@@ -744,7 +771,7 @@ def test_auto_questions_and_matching_details_survive_edits_hide_and_manifest_fai
     config = runtime_config(world, runtime)
     manifest = folder / mission_state.SHARED_DOCUMENTS_FILE
     assert not manifest.exists()
-    automatic = {"ask-7.md", "confirm-B.md", "details/ask-7.md", "details/confirm-B.md"}
+    automatic = {"ask-7.md", "confirm-B.md", "details/ask-7.md", "details/confirm-B.md", "details/history/ask-7.md", "details/history/confirm-B.md"}
     detail_url = f"/mission?slot={slot}&id=automatic"
 
     def check_documents():
@@ -767,6 +794,7 @@ def test_auto_questions_and_matching_details_survive_edits_hide_and_manifest_fai
     write_question(folder, "ask-7.md", "바뀐 배포 범위", [("배포 범위", "pending")])
     (folder / "details/ask-7.md").write_text("# 바뀐 상세 근거\n", encoding="utf-8")
     assert "바뀐 배포 범위" in check_documents()[0]
+    assert dashboard.route(config, dashboard.raw_url(folder / "questions/history/ask-7/1.json"))[0] == 404
     assert "바뀐 상세 근거" in dashboard.route(config, dashboard.raw_url(folder / "details/ask-7.md"))[2].decode("utf-8")
     mission_state.hide_documents(str(folder), ["ask-7.md", "details/ask-7.md"])
     check_documents()

@@ -28,7 +28,7 @@ def outcome(project, tool="Write", **tool_input):
 
 
 @pytest.mark.parametrize("tool,key", [("Write", "file_path"), ("Edit", "path"), ("MultiEdit", "file_path"), ("NotebookEdit", "notebook_path")])
-@pytest.mark.parametrize("target", ["state/mission/ask-1.md", "state/mission/confirm-A.md", "state/mission/questions/ask-1.json", "state/mission/questions/history/ask-1/r1.json"])
+@pytest.mark.parametrize("target", ["state/mission/ask-1.md", "state/mission/confirm-A.md", "state/mission/questions/ask-1.json", "state/mission/questions/history/ask-1/r1.json", "state/mission/details/history/ask-1.md"])
 def test_structured_new_and_existing_question_files(project, tool, key, target):
     assert outcome(project, tool, **{key: target}).deny
     path = project / target
@@ -50,7 +50,7 @@ def test_protection_precedes_all_active_and_role_exceptions(project, extra):
         assert mission_guard.decide(payload).deny
 
 
-@pytest.mark.parametrize("target", ["state/mission/details/ask-1.md", "state/mission/draft.json", "state/mission/reply.json", "state/mission/report.md", "src/app.py"])
+@pytest.mark.parametrize("target", ["state/mission/details/ask-1.md", "state/mission/details/history/notes.md", "state/mission/details/history/ask-1-original.md.txt", "state/mission/draft.json", "state/mission/reply.json", "state/mission/report.md", "src/app.py"])
 def test_other_project_writes_allowed_without_active(project, target):
     assert not outcome(project, path=target).deny
 
@@ -64,6 +64,21 @@ def test_all_patch_targets_and_aliases(project, header, key):
 
 def test_patch_allows_draft_and_detail(project):
     assert not outcome(project, "apply_patch", command="*** Begin Patch\n*** Add File: state/mission/details/ask-1.md\n+text\n*** End Patch").deny
+
+
+@pytest.mark.parametrize("target", ["state/mission/details", "state/mission/details/history"])
+def test_removing_parent_of_generated_history_is_protected(project, target):
+    history = project / "state/mission/details/history/ask-1.md"
+    history.parent.mkdir(parents=True)
+    history.write_text("# Generated palette history", encoding="utf-8")
+    assert outcome(project, "Bash", command=f'rm -rf "{target}"').deny
+
+
+def test_handwritten_history_remains_editable(project):
+    history = project / "state/mission/details/history/notes.md"
+    history.parent.mkdir(parents=True)
+    history.write_text("# Handwritten garden notes", encoding="utf-8")
+    assert not outcome(project, "Bash", command='rm -rf "state/mission/details/history"').deny
 
 
 def test_raw_patch_string_and_malformed_input(project):
