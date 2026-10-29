@@ -113,6 +113,20 @@ def test_complete_requires_clean_review_and_current_verification_and_is_idempote
     assert mission_state.main(command) == 1
 
 
+def test_verification_command_gets_closed_stdin(mission, monkeypatch):
+    seen = []
+    real_run = verification.subprocess.run
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("stdin"))
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(verification.subprocess, "run", spy)
+    code, _ = verify(mission)
+    assert code == 0
+    assert seen == [verification.subprocess.DEVNULL]
+
+
 def test_failure_is_not_cached_and_guard_rejection_never_runs_command(mission):
     root, _, plan = mission
     plan["commands"][0]["argv"] = [sys.executable, "-c", "raise SystemExit(7)"]

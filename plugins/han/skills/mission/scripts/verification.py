@@ -222,7 +222,7 @@ def run(project, folder, unit, plan, guard, force=False):
         for command in plan["commands"]:
             try:
                 done = subprocess.run(
-                    command["argv"], cwd=project_path(project, command.get("cwd", ".")),
+                    command["argv"], cwd=project_path(project, command.get("cwd", ".")), stdin=subprocess.DEVNULL,
                     stdout=log, stderr=subprocess.STDOUT, timeout=command.get("timeoutSeconds", 600), shell=False,
                 )
                 codes.append(done.returncode)
