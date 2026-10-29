@@ -171,6 +171,47 @@ def test_completed_and_withdrawn_answers_are_only_in_history_unless_author_puts_
     assert record["items"][0]["answer"] in history and record["items"][1]["answer"] in history
 
 
+def test_completed_questions_leave_current_contract_and_approval_visible_without_empty_question_section(tmp_path):
+    record = document()
+    record["items"][0].update(status="answered", answer="Use blue.")
+    record["items"][1].update(status="withdrawn", answer="No optional border.")
+    record["approval"] = {"status": "pending", "reason": "Confirm the finished palette."}
+    publish_document(tmp_path, record)
+    text = (tmp_path / "ask-1.md").read_text(encoding="utf-8")
+    assert "## 결정할 것" not in text
+    assert record["body"] in text and record["approval"]["reason"] in text
+    assert summarize_document(record).pending
+    assert not inspect_document(tmp_path, "ask-1.md", text)[1]
+
+
+def test_existing_archive_link_is_not_appended_again_and_record_is_unchanged(tmp_path):
+    record = document()
+    record["body"] += "\n\n[Palette source](details/history/ask-1.md)"
+    publish_document(tmp_path, record)
+    text = (tmp_path / "ask-1.md").read_text(encoding="utf-8")
+    assert text.count("](details/history/ask-1.md)") == 1
+    assert record["body"] in text
+    assert read_document(tmp_path, "ask-1.md") == record
+    assert not inspect_document(tmp_path, "ask-1.md", text)[1]
+
+
+def test_previous_layout_remains_readable_but_edits_fail_and_render_writes_current_layout(tmp_path):
+    record = document()
+    record["items"][0].update(status="answered", answer="Use blue.")
+    record["items"][1].update(status="withdrawn", answer="No optional border.")
+    record["body"] += "\n\n[Palette source](details/history/ask-1.md)"
+    publish_document(tmp_path, record)
+    current = (tmp_path / "ask-1.md").read_text(encoding="utf-8")
+    previous = current.replace(record["intro"], record["intro"] + "\n\n## 결정할 것")
+    previous = previous.rstrip() + "\n\n## 전체 이력\n\n[질문·답 원문 전체 이력](details/history/ask-1.md)\n"
+    (tmp_path / "ask-1.md").write_text(previous, encoding="utf-8")
+    assert previous != current
+    assert not inspect_document(tmp_path, "ask-1.md", previous)[1]
+    assert inspect_document(tmp_path, "ask-1.md", previous.replace(record["body"], "Changed palette."))[1]
+    render_saved_document(tmp_path, "ask-1.md")
+    assert (tmp_path / "ask-1.md").read_text(encoding="utf-8") == current
+
+
 @pytest.mark.parametrize("change", ["missing", "tampered"])
 def test_inspection_rejects_missing_or_changed_generated_history_and_render_repairs_it(tmp_path, change):
     record = publish_document(tmp_path, document())
@@ -346,6 +387,23 @@ def test_editorial_declaration_preserves_answer_scope_and_allows_text_edits(tmp_
         publish_document(tmp_path, changed, 1)
     assert publish_document(tmp_path, changed, 1, editorial=True) == changed
     assert changed["answers"] == saved["answers"]
+
+
+def test_editorial_approval_reason_can_be_reworded_without_changing_state_or_answer_evidence(tmp_path):
+    publish_document(tmp_path, document())
+    payload = answer()
+    payload["approval"] = {"status": "pending", "reason": "The palette still needs confirmation."}
+    saved = answer_document(tmp_path, "ask-1.md", payload)
+    changed = copy.deepcopy(saved)
+    changed["revision"] = 2
+    changed["approval"]["reason"] = "Confirm the palette."
+    publish_document(tmp_path, changed, 1, editorial=True)
+    assert summarize_document(changed).pending
+    assert changed["answers"] == saved["answers"]
+    assert question_records.read_json(tmp_path / "questions/history/ask-1/1.json") == saved
+    archive = question_records.history_path(tmp_path, "ask-1.md").read_text(encoding="utf-8")
+    assert saved["approval"]["reason"] in archive
+    assert changed["approval"]["reason"] in render_document(changed)
 
 
 @pytest.mark.parametrize("change", [

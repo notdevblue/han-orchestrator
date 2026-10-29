@@ -219,7 +219,7 @@ def item_heading(item):
     return f"{item['id']}. {title}"
 
 
-def render_document(record):
+def render_document(record, *, legacy_layout=False):
     record = validate_document(record)
     summary = summarize_document(record)
     approval = record["approval"]
@@ -233,7 +233,8 @@ def render_document(record):
         sections.append(approval["reason"])
     if record["intro"]:
         sections.append(record["intro"])
-    sections.append("## 결정할 것")
+    if summary.pending_count or legacy_layout:
+        sections.append("## 결정할 것")
     for item in record["items"]:
         if item["status"] != "pending":
             continue
@@ -246,7 +247,9 @@ def render_document(record):
             sections.extend(["답 내용:", item["answer"]])
     if record["body"]:
         sections.append(record["body"])
-    sections.extend(["## 전체 이력", f"[질문·답 원문 전체 이력](details/history/{record['id']}.md)"])
+    archive_target = f"details/history/{record['id']}.md"
+    if legacy_layout or f"]({archive_target})" not in "\n\n".join(sections):
+        sections.extend(["## 전체 이력", f"[질문·답 원문 전체 이력]({archive_target})"])
     return "\n\n".join(sections) + "\n"
 
 
@@ -363,7 +366,9 @@ def inspect_document(folder, name, text_snapshot):
     try:
         record = read_document(folder, name)
         contained_path(folder, name)
-        if not isinstance(text_snapshot, str) or normalize_markdown(text_snapshot) != normalize_markdown(render_document(record)):
+        if not isinstance(text_snapshot, str) or normalize_markdown(text_snapshot) not in (
+            normalize_markdown(render_document(record)), normalize_markdown(render_document(record, legacy_layout=True)),
+        ):
             raise QuestionRecordError(f"생성 Markdown과 질문 JSON 불일치: {name}")
         validate_history_archive(history_path(folder, name), record)
         return summarize_document(record), ""
@@ -558,7 +563,7 @@ def validate_publication(current, record, editorial):
             previous = current_items[identifier]
             if item["status"] != previous["status"] or item["answer"] != previous["answer"]:
                 raise QuestionRecordError("editorial 발행은 문항 상태나 답 내용을 변경할 수 없음")
-        if record["approval"] != current["approval"] or record["answers"] != current["answers"]:
+        if record["approval"]["status"] != current["approval"]["status"] or record["answers"] != current["answers"]:
             raise QuestionRecordError("editorial 발행은 승인이나 답 이력을 변경할 수 없음")
         return
     if record["approval"] != current["approval"] and record["approval"]["status"] != "pending":
