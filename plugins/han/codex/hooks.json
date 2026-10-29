@@ -26,8 +26,7 @@
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/question_integrity.py\"", "timeout": 10 },
-          { "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/korean_reply.py\"", "timeout": 5 }
+          { "type": "command", "command": "python \"${PLUGIN_ROOT}/codex/question_integrity.py\"", "timeout": 10 }
         ]
       }
     ]

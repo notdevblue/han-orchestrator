@@ -430,7 +430,7 @@ def test_codex_status_reads_unshared_questions_without_a_valid_manifest(project)
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
-def test_question_hook_registration_preserves_existing_hooks(runtime):
+def test_hook_registration_keeps_only_rules_guard_and_integrity(runtime):
     path = PLUGIN / ("hooks/hooks.json" if runtime == "claude" else "codex/hooks.json")
     hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
     for event in ("PreToolUse", "PostToolUse"):
@@ -441,9 +441,15 @@ def test_question_hook_registration_preserves_existing_hooks(runtime):
         commands = [json.dumps(hook) for entry in hooks[event] for hook in entry["hooks"]]
         assert any("question_integrity.py" in command for command in commands)
         assert all(not hook.get("async", False) for entry in hooks[event] for hook in entry["hooks"])
-    assert "korean_reply.py" in json.dumps(hooks["Stop"])
+    assert set(hooks) == {"SessionStart", "SubagentStart", "PreToolUse", "PostToolUse", "Stop"}
+    assert sum(len(entry["hooks"]) for entries in hooks.values() for entry in entries) == 5
+    for removed in ("korean_reply.py", "memory_notice.py", "session_title.py"):
+        assert removed not in json.dumps(hooks)
+        assert not (PLUGIN / "hooks" / removed).exists()
+        assert not (PLUGIN / "codex" / removed).exists()
     assert "mission_guard.py" in json.dumps(hooks["PreToolUse"])
     assert "session_rules.py" in json.dumps(hooks["SessionStart"])
+    assert "session_rules.py" in json.dumps(hooks["SubagentStart"])
 
 
 @pytest.mark.parametrize("event,tool_name", [("Stop", ""), ("PostToolUse", "Bash"), ("PostToolUse", "apply_patch")])

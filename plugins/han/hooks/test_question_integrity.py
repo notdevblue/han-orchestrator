@@ -18,6 +18,7 @@ def project(tmp_path, monkeypatch):
     for key in ("HAN_ADAPTERS_DIR", "CLAUDE_PLUGIN_OPTION_ADAPTERS_DIR", "CLAUDE_PROJECT_DIR", "HAN_REPO", "HAN_GUARD_LOG"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    monkeypatch.setattr(question_integrity, "CACHE_DIR", tmp_path / "inspection-cache")
     folder = tmp_path / "project"
     adapter = folder / ".claude/orchestrator/adapter.json"
     adapter.parent.mkdir(parents=True)
@@ -226,3 +227,119 @@ def test_cli_answer_repairs_markdown_only_answer_without_question_changes(projec
     run_cli(project, "answer", "ask-palette.md", "--input", str(reply))
     run_cli(project, "check")
     assert question_integrity.decide(payload(project)) == {}
+
+
+@pytest.fixture
+def inspections(monkeypatch):
+    original = question_integrity.mission_state.question_inspections
+    calls = []
+
+    def inspect(folder):
+        calls.append(folder)
+        return original(folder)
+
+    monkeypatch.setattr(question_integrity.mission_state, "question_inspections", inspect)
+    return calls
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_unchanged_post_tool_inputs_reuse_success_but_stop_always_inspects(project, inspections, runtime):
+    question_records.publish_document(project[1], document())
+    for _ in range(3):
+        assert question_integrity.decide(payload(project, "PostToolUse"), runtime) == {}
+    assert len(inspections) == 1
+    (project[1] / "report.md").write_text("An unrelated fictional report", encoding="utf-8")
+    assert question_integrity.decide(payload(project, "PostToolUse"), runtime) == {}
+    assert len(inspections) == 1
+    for _ in range(2):
+        assert question_integrity.decide(payload(project, "Stop", stop_hook_active=True), runtime) == {}
+    assert len(inspections) == 3
+
+
+@pytest.mark.parametrize("relative", ["ask-palette.md", "questions/ask-palette.json", "details/history/ask-palette.md"])
+def test_content_change_with_same_size_and_mtime_invalidates_success(project, inspections, relative):
+    question_records.publish_document(project[1], document())
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    path = project[1] / relative
+    info = path.stat()
+    original = path.read_bytes()
+    path.write_bytes(original.replace(b"Choose", b"Select"))
+    os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns))
+    for _ in range(2):
+        assert question_integrity.decide(payload(project, "PostToolUse"))["decision"] == "block"
+    assert len(inspections) == 3
+
+
+@pytest.mark.parametrize("mutation", ["new-markdown", "new-source", "deleted-source", "deleted-markdown", "deleted-history", "archived-revision", "recovery"])
+def test_question_file_set_and_history_changes_invalidate_success(project, inspections, mutation):
+    folder = project[1]
+    question_records.publish_document(folder, document())
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    if mutation == "new-markdown":
+        (folder / "ask-border.md").write_text("# Fictional border", encoding="utf-8")
+    elif mutation == "new-source":
+        (folder / "questions/ask-border.json").write_text("{}", encoding="utf-8")
+    elif mutation == "deleted-source":
+        (folder / "questions/ask-palette.json").unlink()
+    elif mutation == "deleted-markdown":
+        (folder / "ask-palette.md").unlink()
+    elif mutation == "deleted-history":
+        (folder / "details/history/ask-palette.md").unlink()
+    else:
+        path = folder / "questions/history/ask-palette/1.json"
+        if mutation == "recovery":
+            path = folder / "questions/history/ask-palette/recovery/sample/receipt.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{broken", encoding="utf-8")
+    assert question_integrity.decide(payload(project, "PostToolUse"))["decision"] == "block"
+    assert len(inspections) == 2
+
+
+def test_success_cache_is_scoped_to_session_and_runtime(project, inspections):
+    question_records.publish_document(project[1], document())
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    assert question_integrity.decide(payload(project, "PostToolUse"), "codex") == {}
+    active = project[1].parent / "ACTIVE"
+    record = json.loads(active.read_text())
+    record["session"] = "next-owner"
+    active.write_text(json.dumps(record), encoding="utf-8")
+    assert question_integrity.decide(payload(project, "PostToolUse", session_id="next-owner")) == {}
+    assert len(inspections) == 3
+
+
+def test_corrupt_or_unwritable_cache_falls_back_to_inspection(project, inspections):
+    question_records.publish_document(project[1], document())
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    path = question_integrity.inspection_cache_path(project[1], "owner", "claude")
+    path.write_text("{broken", encoding="utf-8")
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    path.unlink()
+    path.mkdir()
+    for _ in range(2):
+        assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    assert len(inspections) == 4
+
+
+def test_fingerprint_failure_still_runs_inspection(project, inspections, monkeypatch):
+    question_records.publish_document(project[1], document())
+    monkeypatch.setattr(question_integrity, "question_fingerprint", lambda folder: "")
+    for _ in range(2):
+        assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    assert len(inspections) == 2
+
+
+def test_inputs_changed_during_inspection_are_not_cached(project, monkeypatch):
+    question_records.publish_document(project[1], document())
+    original = question_integrity.mission_state.question_inspections
+
+    def inspect_and_change(folder):
+        result = original(folder)
+        with (project[1] / "ask-palette.md").open("a", encoding="utf-8") as stream:
+            stream.write("\nUnrecorded fictional answer")
+        return result
+
+    monkeypatch.setattr(question_integrity.mission_state, "question_inspections", inspect_and_change)
+    assert question_integrity.decide(payload(project, "PostToolUse")) == {}
+    assert not question_integrity.CACHE_DIR.exists()
+    monkeypatch.setattr(question_integrity.mission_state, "question_inspections", original)
+    assert question_integrity.decide(payload(project, "PostToolUse"))["decision"] == "block"

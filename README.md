@@ -20,8 +20,11 @@ Grok Bot은 바깥 코디네이터로 상태를 읽고, 메인 또는 슬롯의 
 | Grok 바깥 층 | `grok/` | 등록하지 않는 초안. 읽기 전용 셸 호출 목록. 실행 절차는 `plugins/han/grok/` |
 | Grok 조회 | `plugins/han/grok/` | 등록 스킬은 `han-status`·`han-doctor`·`han-mission-brief`·`han-run`. 상태·진단·브리프는 그대로이고 구현 절차는 `han-run`. 프로젝트 규칙은 `AGENTS.md`·`CLAUDE.md`. `han-watch`·`han-handoff`는 등록하지 않는 안내 |
 | 미션 가드 | `plugins/han/hooks/mission_guard.py` | 미션 중 submit 등 금지 명령 차단(걸림줄) |
-| 세션 이름 | `plugins/han/hooks/session_title.py` | 새 Claude 세션의 첫 프롬프트로 세션 이름을 붙임(`/han:mission X`는 `미션: X`). `-n`·`/rename`으로 이미 이름이 있거나 이어서 연 세션은 안 바꿈. `HAN_SESSION_TITLE_DISABLE=1`로 끔. 슬롯 `run`은 `-n "<슬롯>: <작업>"`으로 연다 |
+| 질문 무결성 | `plugins/han/hooks/question_integrity.py` | 도구 실행 후 변경 없는 질문 입력은 성공한 검사 결과 재사용. 답변 종료 전에는 전체 검사 |
 | 어댑터 | `adapters/<이름>/` | 프로젝트별 값(`adapter.json`)과 절차(`adapter.md`) |
+
+Claude·Codex 훅은 규칙 주입·미션 가드·질문 무결성 3종이다. 세션 제목·메모리 안내·한국어 답변 차단 훅은 제공하지 않는다.
+슬롯 실행에서 지정하는 세션 이름은 유지한다.
 
 미션의 `confirm-*.md`·`ask-*.md`는 이번 변경·남은 질문·최신 승인 대상·승인 범위를 보여 주고, 개정할 때 현재 상태로 고쳐 쓴다.
 현재 기술 명세·실행 근거는 `details/<같은 파일명>.md`, 질문 정의·답 원문·날짜·대상 개정·승인 범위의 생성 이력은

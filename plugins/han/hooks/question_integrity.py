@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 sys.dont_write_bytecode = True
 SCRIPTS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "mission", "scripts"))
@@ -8,10 +10,76 @@ sys.path.insert(0, SCRIPTS)
 
 import mission_guard
 import mission_state
+import question_records
+import verification
 from question_write_guard import adapter_contexts
 
 
 SUPPORTED_TOOLS = ("Bash", "PowerShell", "exec_command", "Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch", "ApplyPatch")
+CACHE_DIR = Path(tempfile.gettempdir()) / "han-question-integrity"
+
+
+def question_fingerprint(folder):
+    try:
+        names = set(question_records.document_names(folder))
+        names.update(name for name in os.listdir(folder) if mission_state.QUESTION_FILE.fullmatch(name))
+        paths = [question_records.contained_path(folder, name) for name in sorted(names)]
+        paths.extend(question_records.history_path(folder, name) for name in sorted(names))
+        pending = [question_records.contained_path(folder, "questions")]
+        while pending:
+            directory = pending.pop()
+            if not directory.exists():
+                continue
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    path = question_records.contained_path(folder, *Path(entry.path).relative_to(Path(folder).resolve()).parts)
+                    if entry.is_dir():
+                        if path.resolve() != path.absolute():
+                            return ""
+                        pending.append(path)
+                    else:
+                        paths.append(path)
+        return verification.digest([(str(path), str(path.resolve()), verification.file_hash(path)) for path in sorted(paths)])
+    except (OSError, ValueError, RuntimeError):
+        return ""
+
+
+def inspection_cache_path(folder, session, runtime):
+    sources = (__file__, mission_state.__file__, question_records.__file__, verification.__file__,
+               os.path.join(SCRIPTS, "question_summary.py"))
+    key = verification.digest([str(Path(folder).resolve()), session, runtime,
+                               [(str(Path(path).resolve()), verification.file_hash(path)) for path in sources]])
+    return CACHE_DIR / f"{key}.json"
+
+
+def cached_inspection(path, fingerprint):
+    if not fingerprint:
+        return False
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) == {"fingerprint": fingerprint}
+    except (OSError, ValueError):
+        return False
+
+
+def inspection_issues(folder, session, runtime, event):
+    if event == "Stop":
+        return [f"{name}: {issue}" for name, _, issue in mission_state.question_inspections(folder) if issue]
+    fingerprint = question_fingerprint(folder)
+    try:
+        path = inspection_cache_path(folder, session, runtime)
+    except (OSError, ValueError):
+        fingerprint = ""
+        path = CACHE_DIR / "unavailable.json"
+    if cached_inspection(path, fingerprint):
+        return []
+    issues = [f"{name}: {issue}" for name, _, issue in mission_state.question_inspections(folder) if issue]
+    if not issues and fingerprint and question_fingerprint(folder) == fingerprint:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            question_records.write_json(path, {"fingerprint": fingerprint})
+        except OSError:
+            pass
+    return issues
 
 
 def notice(event, message):
@@ -76,7 +144,7 @@ def decide(payload, runtime="claude"):
             resolved = os.path.realpath(folder)
             if os.path.commonpath((root, resolved)) != root or resolved == root:
                 raise ValueError(f"미션 폴더가 stateDir 밖을 가리킴: {folder}")
-            issues = [f"{name}: {issue}" for name, _, issue in mission_state.question_inspections(folder) if issue]
+            issues = inspection_issues(folder, active.session, runtime, event)
         except Exception as error:
             issues = [f"검사 실패 ({type(error).__name__}: {error})"]
         if issues:
