@@ -221,6 +221,7 @@ python -m pytest plugins/han/grok/test_han_state.py -q -p no:cacheprovider
 8. 새 세션에서 확인: `/han:mission`·`/han:slots status`가 보이고 동작하는지, 에이전트 목록에 `han:researcher`가 있는지, 규칙을 켰다면 규칙이 들어왔는지.
 
 업데이트는 저장소를 갱신하고 `claude plugin marketplace update han-orchestrator`와 `/reload-plugins`를 한다.
+Grok은 `~/.grok/config.toml`의 `[skills].paths`가 등록 스킬 여덟 폴더만 가리키는지 확인하고, 그 스킬과 그것이 부르는 공유 스크립트를 push한 커밋과 대조한다. 실행 중인 Grok 세션은 다시 연다.
 `projects.json`·`local.json`은 git에 없어서 덮이지 않는다.
 
 ## 고친 뒤
@@ -244,6 +245,7 @@ python -m pytest plugins/han/grok/test_han_state.py -q -p no:cacheprovider
 
 - 로컬 디렉터리 마켓플레이스라도 설치본은 캐시 복사본이다. 고친 뒤 `claude plugin marketplace update han-orchestrator`와
   플러그인 업데이트(또는 `/reload-plugins`)로 반영한다. 버전을 올리면 확실히 갱신된다(`plugin.json`·`marketplace.json`).
+  Grok은 설치 캐시 대신 위의 `[skills].paths` 확인으로 반영한다.
 - 가드 테스트: `python -m pytest plugins/han/hooks -q -p no:cacheprovider`
 - 어댑터 회귀: `python plugins/han/skills/adapter-init/scripts/check_guard.py <어댑터 이름>`
 - 슬롯 테스트: `python -m pytest plugins/han/skills/slots/scripts -q -p no:cacheprovider`
