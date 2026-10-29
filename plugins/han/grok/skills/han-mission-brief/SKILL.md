@@ -67,4 +67,4 @@ python "<repo>/plugins/han/grok/scripts/han_state.py" brief --project "<프로�
 
 Claude 문장은 `/han:mission ...`, Codex 문장은 `$han-codex:han-mission ...`이다.
 `사람이 그 세션에 붙일 문장`을 그대로 전한다. 슬롯에서 돌려야 하면 비어 있는 ready 슬롯 이름을 같이 적고, 세션은 그 런타임의 slots 명령으로 연다.
-코디네이터는 `claude`, `codex`, `slots.py run`을 띄우지 않는다. 사람이 그 세션에 붙이면 그 세션의 han이 미션을 진행한다.
+이 선택 경로에서는 코디네이터가 Claude·Codex 세션을 띄우지 않는다. Grok 슬롯 세션 실행은 `han-slots`에서 다룬다.

@@ -779,6 +779,7 @@ def test_run_resume_dry_run_prints_resume_wt_command(project):
 def recorded_session(project, tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok"))
     seed_slot(project, "a", active="mission-1")
     folder = project.slot_root / "a" / "_My" / "missions" / "mission-1"
     session = str(uuid.uuid4())
@@ -1966,9 +1967,50 @@ def test_main_sync_is_skipped_without_vcs(project):
     assert project.run("refresh", "a", "--main-keep-local")[0] == slots.OK
 
 
-def test_run_rejects_grok_runtime(capsys):
-    code = slots.main(["--runtime", "grok", "run", "slot1", "작업"])
-    captured = capsys.readouterr()
-    assert code == slots.USAGE
-    assert "han-run" in captured.err
-    assert captured.out == ""
+def test_run_grok_dry_run_preserves_slot_state(project):
+    project.write_adapter([])
+    seed_slot(project, "a")
+    before = {path: path.read_bytes() for path in project.slot_root.rglob("*") if path.is_file()}
+    code, out, err = project.run("--runtime", "grok", "run", "a", "task;", "--dry-run")
+    assert code == slots.OK, err
+    assert "/han-mission task\\;" in out
+    assert "--cwd" in out and "--session-id" in out
+    assert "--autocompact" not in out and " -n " not in out and "--trust" not in out
+    assert {path: path.read_bytes() for path in project.slot_root.rglob("*") if path.is_file()} == before
+
+
+def test_grok_resume_uses_native_session_and_refuses_other_runtime(recorded_session):
+    config, folder, session, transcript = recorded_session
+    transcript.write_text(json.dumps({"params": {"sessionId": session, "update": {"sessionUpdate": "user_message_chunk"}}}) + "\n", encoding="utf-8")
+    assert slots.session_runtime(str(folder), session) == "grok"
+    with pytest.raises(slots.UsageError, match="grok.*--new-session"):
+        slots.resume_command(config, "a", folder.name)
+    config.runtime = "grok"
+    command = slots.resume_command(config, "a", folder.name)
+    assert command[-4:] == ["--resume", session, "--", "/han-mission 미션 이어서"]
+    assert "--autocompact" not in command and "-n" not in command and "--trust" not in command
+    command = slots.resume_command(config, "a", folder.name, new_session=True)
+    assert "--session-id" in command and "--resume" not in command and session not in command
+
+
+def test_session_runtime_finds_grok_native_fallback(recorded_session, tmp_path):
+    _, folder, session, transcript = recorded_session
+    transcript.unlink()
+    native = tmp_path / "grok" / "sessions" / "workspace-hash" / session / "updates.jsonl"
+    native.parent.mkdir(parents=True)
+    native.write_text(json.dumps({"params": {"sessionId": session, "update": {"sessionUpdate": "turn_completed"}}}) + "\n", encoding="utf-8")
+    assert slots.session_runtime(str(folder), session) == "grok"
+
+
+@pytest.mark.parametrize("entry", [{"unknown": True}, [], {"type": "unexpected"}])
+def test_session_runtime_refuses_unknown_transcript(recorded_session, entry):
+    _, folder, session, transcript = recorded_session
+    transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    assert slots.session_runtime(str(folder), session) == ""
+
+
+@pytest.mark.parametrize("kind", ["summary", "file-history-snapshot", "queue-operation"])
+def test_session_runtime_keeps_claude_metadata_headers(recorded_session, kind):
+    _, folder, session, transcript = recorded_session
+    transcript.write_text(json.dumps({"type": kind}) + "\n", encoding="utf-8")
+    assert slots.session_runtime(str(folder), session) == "claude"

@@ -11,6 +11,8 @@ import glob
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -191,6 +193,76 @@ def check_versions(report):
         report.add(level, "version", f"Codex han-codex 저장소 {repo['codex']} / 설치 캐시 {', '.join(codex) or '없음'}")
 
 
+def grok_han_hook(entry):
+    source = entry.get("source")
+    source_path = ""
+    if isinstance(source, dict):
+        source_path = source.get("path", "")
+    paths = [str(entry.get("target") or ""), str(source_path)]
+    for path in paths:
+        normalized = "/" + "/".join(part for part in path.replace("\\", "/").lower().split("/") if part)
+        if "/han/hooks/" in normalized or "/han/grok/" in normalized or "/hooks/han" in normalized:
+            return True
+    return False
+
+
+def check_grok(report):
+    executable = shutil.which("grok")
+    if not executable:
+        report.add("FAIL", "grok-cli", "PATH 에 Grok 실행 파일 없음")
+        return
+    try:
+        version = subprocess.run([executable, "--version"], capture_output=True, text=True, encoding="utf-8", timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        report.add("FAIL", "grok-cli", f"{executable}: 버전 조회 실패 ({type(exc).__name__})")
+        return
+    if version.returncode:
+        report.add("FAIL", "grok-cli", f"{executable}: 버전 조회 종료 코드 {version.returncode}")
+        return
+    report.add("OK", "grok-cli", f"{executable}: {version.stdout.strip()}")
+    try:
+        result = subprocess.run([executable, "inspect", "--json"], capture_output=True, text=True, encoding="utf-8", timeout=10)
+        if result.returncode:
+            report.add("WARN", "grok-registration", f"inspect 종료 코드 {result.returncode} — 등록 상태 확인 못 함")
+            return
+        inspection = json.loads(result.stdout)
+        if not isinstance(inspection, dict):
+            raise ValueError("inspect JSON object 필요")
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        report.add("WARN", "grok-registration", f"inspect 확인 실패 ({type(exc).__name__})")
+        return
+    skills = inspection.get("skills")
+    discovered = set()
+    if isinstance(skills, list):
+        discovered = {entry.get("name") for entry in skills if isinstance(entry, dict) and isinstance(entry.get("name"), str)}
+    skill_root = os.path.join(PLUGIN, "grok", "skills")
+    expected = {name for name in os.listdir(skill_root) if os.path.isfile(os.path.join(skill_root, name, "SKILL.md"))}
+    expected -= {"han-watch", "han-handoff"}
+    missing = sorted(expected - discovered)
+    level = "OK"
+    detail = f"스킬 검색 {len(expected & discovered)}/{len(expected)}개"
+    if missing:
+        level = "WARN"
+        detail += f" — 없음: {', '.join(missing)}"
+    report.add(level, "grok-skills", detail)
+    hooks = inspection.get("hooks")
+    registered = []
+    if isinstance(hooks, list):
+        registered = [entry for entry in hooks if isinstance(entry, dict) and grok_han_hook(entry)]
+    level = "WARN"
+    if registered:
+        level = "OK"
+    report.add(level, "grok-hooks", f"han 훅 검색 {len(registered)}개 — 검색 결과는 로드·실행 검증이 아님")
+    trusted = inspection.get("projectTrusted")
+    level, trust_text = "WARN", "확인 못 함"
+    if trusted is True:
+        level, trust_text = "OK", "신뢰됨"
+    elif trusted is False:
+        trust_text = "신뢰 안 됨"
+    report.add(level, "grok-trust", f"현재 폴더 {trust_text} — 훅별 신뢰·활성·실행 여부는 별도 확인 필요")
+    report.add("WARN", "grok-capabilities", "슬롯 실행은 Grok 기본 압축 설정 사용 — Claude·Codex slots.autocompact 옵션은 전달하지 않음. 하위 에이전트 상태는 저장된 metadata·lifecycle 기준")
+
+
 def run(runtime):
     report = Report()
     check_python(report)
@@ -199,6 +271,8 @@ def run(runtime):
     except Exception as e:  # 점검 도구는 끝까지 출력
         report.add("FAIL", "registry", f"내부 오류 {type(e).__name__}: {e}")
     check_versions(report)
+    if runtime == "grok":
+        check_grok(report)
     return report
 
 

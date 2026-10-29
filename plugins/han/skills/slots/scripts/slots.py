@@ -18,8 +18,10 @@ from datetime import date, datetime
 
 HOOKS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "hooks"))
 sys.path.insert(0, HOOKS_DIR)
+sys.path.insert(0, os.path.normpath(os.path.join(HOOKS_DIR, "..", "grok", "scripts")))
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "mission", "scripts")))
 import mission_guard  # noqa: E402
+import grok_transcript
 
 OK = 0
 FAILED = 1
@@ -1372,7 +1374,8 @@ SESSION_NAME_LIMIT = 40
 
 
 def wt_command(config, name, task, session_task="", resume_session=""):
-    prompt = f"$han-codex:han-mission {task}" if config.runtime == "codex" else f"/han:mission {task}"
+    prompts = {"claude": "/han:mission", "codex": "$han-codex:han-mission", "grok": "/han-mission"}
+    prompt = f"{prompts[config.runtime]} {task}"
     escaped = prompt.replace(";", "\\;")
     title = f"{config.project_name}:{name}"
     # wt.exe 는 .exe 만 찾아서 npm shim(codex.cmd) 은 전체 경로로 넘겨야 뜸
@@ -1380,13 +1383,25 @@ def wt_command(config, name, task, session_task="", resume_session=""):
     command = ["wt.exe", "-w", "0", "nt", "--title", title, "-d", config.slot_path(name), executable]
     if config.runtime == "codex":
         options = ["-c", f"model_auto_compact_token_limit={config.autocompact}"]
-        return command + options + (["resume", resume_session] if resume_session else []) + [escaped]
+        if resume_session:
+            options += ["resume", resume_session]
+        return command + options + [escaped]
+    if config.runtime == "grok":
+        options = ["--cwd", config.slot_path(name)]
+        if resume_session:
+            options += ["--resume", resume_session]
+        else:
+            options += ["--session-id", str(uuid.uuid4())]
+        return command + options + ["--", escaped]
     session_name = f"{name}: {session_task or task}"
     if len(session_name) > SESSION_NAME_LIMIT:
         session_name = session_name[: SESSION_NAME_LIMIT - 1] + "…"
     session = resume_session or str(uuid.uuid4())
+    session_option = "--session-id"
+    if resume_session:
+        session_option = "--resume"
     return command + ["--autocompact", str(config.autocompact), "-n", session_name.replace(";", "\\;"),
-                      "--resume" if resume_session else "--session-id", session,
+                      session_option, session,
                       "--", escaped]
 
 
@@ -1428,16 +1443,26 @@ def session_runtime(folder, session):
     if not mission_state.SESSION_ID.fullmatch(session):
         return ""
     sessions_path = os.path.join(folder, mission_guard.SESSIONS_FILE)
-    rows = mission_state.read_table(sessions_path, mission_guard.SESSIONS_HEADER) if os.path.isfile(sessions_path) else []
+    rows = []
+    if os.path.isfile(sessions_path):
+        rows = mission_state.read_table(sessions_path, mission_guard.SESSIONS_HEADER)
     transcript = next((row["transcript"] for row in reversed(rows) if row["session"] == session and os.path.isfile(row["transcript"])), "")
     if not transcript:
         home = os.path.expanduser("~")
-        transcript = mission_state.search_codex(session, home) or mission_state.search_claude(session, home)
+        transcript = mission_state.search_codex(session, home) or mission_state.search_claude(session, home) or grok_transcript.find_transcript(session, home)
     if not transcript:
         return ""
+    if grok_transcript.is_transcript(transcript):
+        return "grok"
     with open(transcript, encoding="utf-8-sig") as stream:
         first = json.loads(stream.readline())
-    return "codex" if first.get("type") == "session_meta" else "claude"
+    if not isinstance(first, dict):
+        return ""
+    if first.get("type") == "session_meta":
+        return "codex"
+    if first.get("type") in ("user", "assistant", "system", "summary", "file-history-snapshot", "queue-operation", "progress"):
+        return "claude"
+    return ""
 
 
 def resume_command(config, name, mission_id, new_session=False):
@@ -1758,8 +1783,6 @@ def main(argv=None, runtime="claude"):
         return USAGE if e.code else OK
     runtime = getattr(args, "runtime", None) or runtime
     try:
-        if args.command == "run" and runtime == "grok":
-            raise UsageError("run 은 Claude·Codex 세션만 띄운다. Grok은 슬롯 폴더에서 grok 를 열고 han-run 을 쓴다")
         located = locate(args.project, runtime)
         config = Config(located, read_adapter(located.adapter_path, runtime), runtime)
         return COMMANDS[args.command](config, args)

@@ -113,6 +113,26 @@ def test_owner_and_common_parent_child_session_scope(project, fields, blocked):
     assert (output.get("decision") == "block") is blocked
 
 
+@pytest.mark.parametrize("runtime", ["grok", "codex", "claude"])
+@pytest.mark.parametrize("event", ["PostToolUse", "Stop"])
+def test_repair_command_preserves_detected_runtime_and_adapter(project, runtime, event):
+    root, mission = project
+    if runtime != "claude":
+        (root / ".claude").rename(root / f".{runtime}")
+    (mission / "ask-palette.md").write_text("# Unregistered fictional question", encoding="utf-8")
+    fields = payload(project, event)
+    if runtime == "grok":
+        fields = {"hookEventName": {"PostToolUse": "post_tool_use", "Stop": "stop"}[event], "sessionId": "owner", "cwd": str(root),
+                  "toolName": "write", "toolInput": {"path": "notes.md", "contents": "Fictional note"}}
+        output = question_integrity.decide(fields)
+    else:
+        output = question_integrity.decide(fields, runtime)
+    assert output["decision"] == "block"
+    expected = f'python "{os.path.join(question_integrity.SCRIPTS, "mission_state.py")}" --runtime {runtime} question check --project "{root}" --mission "{mission.name}"'
+    assert expected in output["reason"]
+    assert str(mission) in output["reason"]
+
+
 def test_no_active_or_adapter_does_not_audit_archived_questions(project):
     _, mission = project
     (mission / "ask-palette.md").write_text("# Archived fictional question", encoding="utf-8")

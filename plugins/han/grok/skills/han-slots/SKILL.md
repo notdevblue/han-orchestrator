@@ -17,6 +17,7 @@ description: "Grok CLI에서 슬롯 워크스페이스를 조회·생성·갱신
 python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --project "<메인 프로젝트>" status
 python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --project "<메인 프로젝트>" create <이름> --dry-run
 python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --project "<메인 프로젝트>" refresh <이름> --dry-run
+python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --project "<메인 프로젝트>" run <이름> "<목표>" --dry-run
 python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --project "<메인 프로젝트>" remove <이름> --yes
 ```
 
@@ -28,9 +29,9 @@ python "<repo>/plugins/han/skills/slots/scripts/slots.py" --runtime grok --proje
 ## Grok으로 슬롯 작업
 
 새 미션은 비어 있는 ready 슬롯에만 붙인다. ACTIVE가 있는 슬롯에 다른 미션을 겹치지 않는다.
-Grok 단독이면 세션을 띄우지 않는다. 등록된 슬롯 경로에서 `grok`를 열고 `han-run`으로 구현한다.
+Grok CLI가 이미 등록된 슬롯 경로에서 실행 중이면 `han-run`으로 구현한다. 새 Windows Terminal 세션이 필요할 때 사용자가 요청하면 아래 `run --runtime grok`을 쓴다.
 
-`slots.py run`은 Claude 세션을 Windows Terminal에 띄우는 선택 경로다. 사용자가 Claude 세션을 띄우라고 할 때만 `--runtime` 없이 호출한다. `ready`이고 ACTIVE가 없어야 한다. `--runtime grok`를 `run`에 붙이면 스크립트가 거부한다.
+`slots.py run`은 선택한 런타임 세션을 Windows Terminal에 띄운다. Claude는 `--runtime` 없이, Grok은 `--runtime grok`으로 호출한다. 두 경우 모두 슬롯이 `ready`이고 ACTIVE가 없어야 한다. 스크립트가 확인하는 소유권·상태 조건을 우회하지 않는다.
 Codex 세션은 사용자가 그 런타임을 지정할 때만 `<repo>/plugins/han/codex/skills/han-slots/scripts/slots.py`의 `run`이다.
 
 대시보드가 필요하면 `<repo>/plugins/han/skills/slots/scripts/dashboard.py`를 읽기 전용으로 띄운다. 답과 승인은 대시보드에 쓰지 않는다.

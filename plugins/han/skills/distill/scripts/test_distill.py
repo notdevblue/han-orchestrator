@@ -390,3 +390,61 @@ def test_codex_entrypoint_records_and_extracts_from_another_cwd(env, monkeypatch
         outputs.append(result.stdout.decode("utf-8"))
     assert "메시지 1개" in outputs[0] and "메시지 0개" in outputs[-1]
     assert (env.root / "codex-home/han/distill/log.tsv").is_file()
+
+
+def grok_update(kind, text="", timestamp=1800000000, session="sample-session"):
+    return {"timestamp": timestamp, "params": {"sessionId": session,
+        "update": {"sessionUpdate": kind, "content": {"type": "text", "text": text}}}}
+
+
+def test_grok_streaming_prompts_previous_response_and_context_filter(env):
+    path = write_transcript(env.root / "updates.jsonl", [
+        grok_update("user_message_chunk", "# AGENTS.md instructions\nInjected context"),
+        grok_update("turn_completed"),
+        grok_update("agent_message_chunk", "The "), grok_update("agent_thought_chunk", "Hidden thought"),
+        grok_update("tool_call_update", "Hidden tool"), grok_update("agent_message_chunk", "color is blue."),
+        grok_update("turn_completed"),
+        grok_update("user_message_chunk", "Use ", 1800000001), grok_update("user_message_chunk", "green", 1800000002),
+    ])
+    env.ok("extract", "--runtime", "grok", "--transcript", str(path), "--out", str(env.out))
+    text = env.out.read_text(encoding="utf-8")
+    assert "## sample-session" in text
+    assert "앞 답: > The color is blue." in text
+    assert "사용자: Use green" in text
+    assert "2027-01-15T08:00:02.000Z" in text
+    assert all(value not in text for value in ("Injected context", "Hidden thought", "Hidden tool"))
+
+
+def test_grok_distinct_sessions_have_separate_watermarks(env):
+    paths = []
+    for session in ("first-session", "second-session"):
+        folder = env.root / session
+        folder.mkdir()
+        paths.append(write_transcript(folder / "updates.jsonl", [
+            grok_update("user_message_chunk", "Earlier", session=session), grok_update("turn_completed", session=session),
+            grok_update("user_message_chunk", "Later", 1800000001, session),
+        ]))
+    env.ok("--runtime", "grok", "record", "--session", "first-session", "--until", "2027-01-15T08:00:00.000Z", "--verdict", "확인")
+    env.ok("--runtime", "grok", "extract", "--transcript", str(paths[0]), "--transcript", str(paths[1]), "--out", str(env.out))
+    text = env.out.read_text(encoding="utf-8")
+    first, second = text.split("## second-session")
+    assert "## first-session" in first and "Earlier" not in first and "Later" in first
+    assert "Earlier" in second and "Later" in second
+
+
+def test_grok_log_honors_home_and_explicit_override(env, monkeypatch):
+    monkeypatch.delenv("HAN_DISTILL_LOG")
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    assert Path(distill.log_path("grok")) == Path.home() / ".grok/han/distill/log.tsv"
+    monkeypatch.setenv("GROK_HOME", str(env.root / "grok-home"))
+    env.ok("record", "--runtime", "grok", "--session", "sample-session", "--until", "2027-01-15T08:00:00.000Z", "--verdict", "확인")
+    assert (env.root / "grok-home/han/distill/log.tsv").is_file()
+    monkeypatch.setenv("HAN_DISTILL_LOG", str(env.log))
+    assert distill.log_path("grok") == str(env.log)
+
+
+def test_grok_requires_explicit_transcript_and_never_uses_claude_environment(env, monkeypatch):
+    path = write_transcript(env.root / "claude.jsonl", [user("Different session", "2027-01-15T08:00:00.000Z")])
+    monkeypatch.setenv("HAN_TRANSCRIPT", str(path))
+    assert "--transcript 필요" in env.fail("extract", "--runtime", "grok", "--out", str(env.out))
+    assert not env.out.exists()

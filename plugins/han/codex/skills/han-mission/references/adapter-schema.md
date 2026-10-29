@@ -48,6 +48,7 @@ Grok 코디네이터는 상태를 읽고 메인 또는 등록된 슬롯의 실�
 Claude(`/han:mission`)와 Codex(`$han-codex:han-mission`)는 선택 경로다.
 조회 스크립트 `plugins/han/grok/scripts/han_state.py`의 `snapshot`은 `ACTIVE`·`mission.md`·`slots.tsv`를 읽기만 한다.
 `brief --runtime grok`는 SendToAgent 인계 블록을 출력하고, `claude`·`codex`는 붙여 넣을 문장을 출력한다. 조회 명령은 미션 파일을 쓰지 않는다.
+Grok SessionStart는 `new`·`load`를 지원한다. 미션 가드는 Grok 도구 이벤트와 도구 이름을 공통 가드 입력으로 정규화하며, `open`·`resume`·`close` 마커를 처리한다. `open`·`resume` 뒤에는 `ACTIVE`가 미션 id와 현재 세션 id를 가리키는지 확인하고, 확인된 뒤 `init`을 실행한다. 공유 transcript reader는 ACP `updates.jsonl` 형식을 읽으며, 경로는 훅 컨텍스트나 세션 기록에서 확인한 값을 사용한다.
 Grok CLI·Bot에 등록하는 스킬은 `han-status`, `han-doctor`, `han-mission-brief`, `han-run`, `han-mission`, `han-slots`, `han-adapter-init`, `han-distill`이다.
 `han-watch`와 `han-handoff`는 그 등록 스킬을 가리키는 저장소 안내이며 등록하지 않는다.
 
@@ -59,7 +60,7 @@ Grok의 검색만 아래 순서를 쓴다. Claude·Codex의 검색 순서와 `ru
 3. 없으면 `HAN_REPO/adapters`. `HAN_REPO`는 이 저장소를 받은 폴더다. 폴더를 지정했는데 `adapters`가 없으면 조회가 오류로 끝난다.
 4. 그것도 없으면 이 저장소에서 스크립트를 직접 실행할 때 `<저장소>/adapters`.
 
-Claude 플러그인 설정과 Codex `config.toml`은 읽지 않고, SessionStart로 경로를 주입하지 않는다.
+Claude 플러그인 설정과 Codex `config.toml`은 읽지 않는다. Grok은 `~/.grok/plugins/han`에 native 등록하고, 선택 경로와 manifest는 `grok inspect`로 확인한다.
 상태 경로는 공유 병합인 `adapter.json` 다음 `local.json`만 적용한다. `runtimes.codex`와 별도의 Grok 미션 오버레이는 적용하지 않는다.
 
 ## adapter.json

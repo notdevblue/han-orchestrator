@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+from hook_runtime import is_grok_subagent, normalize_payload
 import question_write_guard
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -183,7 +184,6 @@ def in_place_adapters_dir():
 
 
 def han_repo_adapters_dir():
-    # Grok에는 SessionStart 주입이 없다. HAN_REPO는 이 저장소를 받은 폴더다.
     repo = os.environ.get(REPO_ENV, "").strip()
     if not repo:
         return ""
@@ -1073,6 +1073,8 @@ def consume_allow_once(state_dir, mission_id, command):
 
 
 def runs_in_other_session(active, payload):
+    if is_grok_subagent(payload):
+        return False
     session_id = payload.get("session_id")
     if not active.session or not session_id:
         return False
@@ -1182,7 +1184,7 @@ def coordinator_write_reason(project, cwd, target, globs):
 
 def decide_write(payload):
     outcome = Outcome()
-    if payload.get("agent_id"):  # 서브에이전트 쓰기는 코디네이터 제한 대상이 아님
+    if is_grok_subagent(payload) or (payload.get("han_runtime") != "grok" and payload.get("agent_id")):
         return outcome
     target = written_path(payload)
     if not target:
@@ -1206,6 +1208,7 @@ def decide_write(payload):
 
 
 def decide(payload):
+    payload = normalize_payload(payload)
     payload = question_write_guard.resolved_payload(payload)
     outcome = Outcome()
     try:
@@ -1236,6 +1239,11 @@ def decide(payload):
     state_dir = state_dir_of(located.project, adapter)
     stale_hours = stale_hours_of(adapter)
 
+    if payload.get("han_runtime") == "grok" and payload.get("toolInputTruncated"):
+        active = read_active(state_dir)
+        if active.id and not runs_in_other_session(active, payload):
+            outcome.deny = "Grok 명령 입력이 잘려 미션 가드를 확인할 수 없음; 짧은 명령으로 나눌 것"
+            return outcome
     verdict = judge_command(adapter, command, tool_name, problems, located.project)
     if verdict.kind != "marker":
         try:
@@ -1245,6 +1253,12 @@ def decide(payload):
     if verdict.kind == "mixed":
         outcome.deny = verdict.reason
     elif verdict.kind == "marker":
+        if is_grok_subagent(payload):
+            outcome.deny = "Grok 서브에이전트는 미션 open/resume/close를 실행하지 않음; 부모 세션에서 실행할 것"
+            return outcome
+        if payload.get("han_runtime") == "grok" and not payload.get("session_id"):
+            outcome.deny = "Grok 미션 마커에 소유 session_id가 없음"
+            return outcome
         handle_marker(
             verdict.marker,
             state_dir,
@@ -1279,7 +1293,7 @@ def render_output(outcome):
 
 
 def log_payload(payload):
-    command = (payload.get("tool_input") or {}).get("command")
+    command = question_write_guard.input_mapping(payload).get("command")
     entry = {key: payload.get(key) for key in LOG_FIELDS}
     entry["command"] = command[:LOG_COMMAND_LENGTH] if isinstance(command, str) else None
     append_log(entry)
@@ -1296,16 +1310,11 @@ def append_log(entry):
         pass
 
 
-def main(runtime="claude"):
+def main(runtime=""):
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
         payload = payload if isinstance(payload, dict) else {}
-        payload["han_runtime"] = runtime
-        if runtime == "codex" and payload.get("tool_name") == "Bash":
-            tool_input = payload.get("tool_input") or {}
-            shell = str(tool_input.get("shell") or "").lower()
-            if "powershell" in shell or "pwsh" in shell or (os.name == "nt" and not shell):
-                payload["tool_name"] = "PowerShell"
+        payload = normalize_payload(payload, runtime)
         log_payload(payload)
         outcome = decide(payload)
     except GuardOff as e:

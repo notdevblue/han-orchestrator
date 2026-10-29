@@ -34,6 +34,8 @@ def input_mapping(payload):
 
 
 def resolved_payload(payload):
+    if payload.get("han_runtime") == "grok":
+        return payload
     tool_input = input_mapping(payload)
     tool_cwd = tool_input.get("cwd")
     if not isinstance(tool_cwd, str) or not tool_cwd:

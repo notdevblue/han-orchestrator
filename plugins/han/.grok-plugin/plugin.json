@@ -1,0 +1,16 @@
+{
+  "name": "han",
+  "version": "0.2.63",
+  "description": "프로젝트 어댑터를 사용하는 Grok 미션·슬롯·피드백 도구와 공통 미션 가드",
+  "skills": [
+    "./grok/skills/han-status",
+    "./grok/skills/han-doctor",
+    "./grok/skills/han-mission-brief",
+    "./grok/skills/han-run",
+    "./grok/skills/han-mission",
+    "./grok/skills/han-slots",
+    "./grok/skills/han-adapter-init",
+    "./grok/skills/han-distill"
+  ],
+  "agents": []
+}

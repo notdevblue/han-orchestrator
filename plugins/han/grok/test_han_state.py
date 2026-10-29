@@ -358,8 +358,16 @@ def test_grok_skill_registration_names():
         "han-status", "han-doctor", "han-mission-brief", "han-run",
         "han-mission", "han-slots", "han-adapter-init", "han-distill",
     )
-    for name in registered:
-        text = (skills / name / "SKILL.md").read_text(encoding="utf-8")
+    plugin = SCRIPT.parents[2]
+    manifest = json.loads((plugin / ".grok-plugin/plugin.json").read_text(encoding="utf-8"))
+    paths = manifest["skills"]
+    assert len(paths) == 8
+    assert set(paths) == {f"./grok/skills/{name}" for name in registered}
+    names = {Path(path).name for path in paths}
+    assert "han-watch" not in names and "han-handoff" not in names
+    for path in paths:
+        name = Path(path).name
+        text = (plugin / path / "SKILL.md").read_text(encoding="utf-8")
         assert f"name: {name}\n" in text
     run = (skills / "han-run" / "SKILL.md").read_text(encoding="utf-8")
     assert "CLAUDE.md" in run and ".claude/rules/" in run
@@ -390,11 +398,8 @@ def test_grok_skill_registration_names():
     assert "Claude·Codex의 han이 맡는다" not in status
     assert "읽기 전용" in doctor and "han-mission-brief" in doctor
     readme = (SCRIPT.parents[1] / "README.md").read_text(encoding="utf-8")
-    paths = readme.split("paths = [", 1)[1].split("]", 1)[0]
     for name in registered:
         assert name in readme
-        assert f"skills/{name}" in paths
-    assert "han-watch" not in paths and "han-handoff" not in paths
     assert "han-watch" in readme and "등록하지 않는다" in readme
     assert "<project>" in readme and "<slot-path>" in readme and "실행 규칙" in readme
 

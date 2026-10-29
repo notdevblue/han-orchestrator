@@ -265,6 +265,7 @@ def test_installed_codex_hook_uses_config_registry_without_environment(project, 
     shutil.copy2(PLUGIN / "codex/mission_guard.py", installed / "codex/mission_guard.py")
     shutil.copy2(PLUGIN / "hooks/mission_guard.py", installed / "hooks/mission_guard.py")
     shutil.copy2(PLUGIN / "hooks/question_write_guard.py", installed / "hooks/question_write_guard.py")
+    shutil.copy2(PLUGIN / "hooks/hook_runtime.py", installed / "hooks/hook_runtime.py")
     registry = tmp_path / "registry"
     adapter_dir = registry / "test"
     adapter_dir.mkdir(parents=True)
@@ -456,9 +457,9 @@ def test_hook_registration_keeps_only_rules_guard_and_integrity(runtime):
 def test_installed_codex_integrity_uses_config_registry_read_only(project, tmp_path, event, tool_name):
     (project / ".codex/orchestrator/adapter.json").unlink()
     installed = tmp_path / "installed/plugins/han"
-    paths = ("codex/question_integrity.py", "hooks/question_integrity.py", "hooks/question_write_guard.py", "hooks/mission_guard.py",
+    paths = ("codex/question_integrity.py", "hooks/question_integrity.py", "hooks/question_write_guard.py", "hooks/mission_guard.py", "hooks/hook_runtime.py",
              "skills/mission/scripts/mission_state.py", "skills/mission/scripts/verification.py", "skills/mission/scripts/question_records.py",
-             "skills/mission/scripts/question_summary.py", "skills/slots/scripts/slots.py")
+             "skills/mission/scripts/question_summary.py", "skills/slots/scripts/slots.py", "grok/scripts/grok_transcript.py")
     for relative in paths:
         target = installed / relative
         target.parent.mkdir(parents=True, exist_ok=True)

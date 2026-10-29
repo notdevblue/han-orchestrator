@@ -11,17 +11,17 @@ description: "Grok CLI 세션이나 미션 대화 기록에서 사용자 피드�
 `<repo>`는 `HAN_REPO`이거나 저장소 체크아웃이다.
 
 ```text
-python "<repo>/plugins/han/skills/distill/scripts/distill.py" extract --transcript "<대화 기록>" --out "<저장소 밖 비공개 경로>/distill.md"
-python "<repo>/plugins/han/skills/distill/scripts/distill.py" record --session <id> --until <ts> --verdict 반영 --dest guide --summary "<한 줄>"
-python "<repo>/plugins/han/skills/distill/scripts/distill.py" record --session <id> --until <ts> --verdict 기각 --summary "<한 줄>"
+python "<repo>/plugins/han/skills/distill/scripts/distill.py" --runtime grok extract --transcript "<실제 대화 기록 경로>" --out "<저장소 밖 비공개 경로>/distill.md"
+python "<repo>/plugins/han/skills/distill/scripts/distill.py" --runtime grok record --session <id> --until <ts> --verdict 반영 --dest guide --summary "<한 줄>"
+python "<repo>/plugins/han/skills/distill/scripts/distill.py" --runtime grok record --session <id> --until <ts> --verdict 기각 --summary "<한 줄>"
 ```
 
-Grok에는 SessionStart가 없고 Claude의 `HAN_TRANSCRIPT`도 없다. 그 변수를 Grok 기록으로 쓰지 않는다.
-자동 경로가 없으면 `--transcript`가 필수다. 최신 파일을 고르거나 경로를 추측하지 않는다. 사용자가 경로를 주기 전에는 extract를 돌리지 않는다.
+Grok SessionStart는 `new`·`load` 이벤트의 대화 기록 경로를 컨텍스트에 전달한다. ACP `updates.jsonl`은 추출기가 읽을 수 있지만, `--transcript`에는 컨텍스트나 세션 기록에 명시된 실제 경로를 사용한다. 최신 파일을 선택하거나 경로를 추측하지 않는다.
+Grok은 Claude의 `HAN_TRANSCRIPT`를 자동 경로로 사용하지 않는다. extract에는 명시한 `--transcript`가 필요하다.
 미션이면 `mission_state.py transcripts`가 출력한 경로마다 `--transcript`를 붙인다. 출력에 없는 경로는 넣지 않는다.
 추출 출력에 없는 문장을 피드백으로 만들지 않는다. 남길 것이 없으면 그렇게 말하고 `record --verdict 확인`으로 워터마크만 올린다.
 
-`--until`은 extract가 출력한 그 세션의 until이다. 로그는 `HAN_DISTILL_LOG`다. 비어 있으면 스크립트 기본값(`~/.claude/han/distill/log.tsv`)에 기록된다. Grok 기록을 그 파일에 섞지 않으려면 쓰기 전에 `HAN_DISTILL_LOG`를 저장소 밖 비공개 경로로 둔다.
+`--until`은 extract가 출력한 그 세션의 until이다. 로그는 `HAN_DISTILL_LOG`다. 비어 있으면 Grok은 `GROK_HOME/han/distill/log.tsv`에 기록하며 `GROK_HOME`이 비어 있으면 `~/.grok/han/distill/log.tsv`다.
 처음부터 다시 보려면 `--all`이다.
 
 고를 곳: `guide`(프로젝트 규칙), `memory`(이 사용자 선호), `rules`(han 개인 규칙), `plugin`(han 절차). 코드 규칙은 `guide`가 기본이다.

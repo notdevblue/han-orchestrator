@@ -12,6 +12,7 @@ import mission_guard
 import mission_state
 import question_records
 import verification
+from hook_runtime import normalize_payload
 from question_write_guard import adapter_contexts
 
 
@@ -96,8 +97,8 @@ def block(event, reason):
     return output
 
 
-def repair_direction(located, active, folder):
-    command = f'python "{os.path.join(SCRIPTS, "mission_state.py")}" question check --project "{located.project}" --mission "{active.id}"'
+def repair_direction(located, active, folder, runtime):
+    command = f'python "{os.path.join(SCRIPTS, "mission_state.py")}" --runtime {runtime} question check --project "{located.project}" --mission "{active.id}"'
     return (
         f"질문 기록 확인 필요: {folder}. {command} 로 확인할 것. "
         "Markdown에만 남은 답·승인은 먼저 원문을 별도 보존하고 실제 답·대상 개정을 확인할 것. "
@@ -109,9 +110,11 @@ def repair_direction(located, active, folder):
     )
 
 
-def decide(payload, runtime="claude"):
+def decide(payload, runtime=""):
     if not isinstance(payload, dict):
         return notice("", "질문 무결성 검사 미실행: 훅 입력이 객체가 아님; 현재 미션에서 question check를 실행할 것")
+    payload = normalize_payload(payload, runtime)
+    runtime = payload["han_runtime"]
     event = payload.get("hook_event_name")
     if not isinstance(event, str) or not event:
         return notice("", "질문 무결성 검사 미실행: hook_event_name 없음; 현재 미션에서 question check를 실행할 것")
@@ -119,7 +122,6 @@ def decide(payload, runtime="claude"):
         return {}
     if event == "PostToolUse" and payload.get("tool_name") not in SUPPORTED_TOOLS:
         return {}
-    payload = {**payload, "han_runtime": runtime}
     try:
         contexts = adapter_contexts(payload, [], mission_guard)
     except Exception as error:
@@ -148,11 +150,11 @@ def decide(payload, runtime="claude"):
         except Exception as error:
             issues = [f"검사 실패 ({type(error).__name__}: {error})"]
         if issues:
-            return block(event, "\n".join([*issues, repair_direction(located, active, folder)]))
+            return block(event, "\n".join([*issues, repair_direction(located, active, folder, runtime)]))
     return {}
 
 
-def main(runtime="claude"):
+def main(runtime=""):
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     except (OSError, ValueError, UnicodeError) as error:

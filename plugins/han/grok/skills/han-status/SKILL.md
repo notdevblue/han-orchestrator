@@ -13,7 +13,7 @@ description: "Grok Bot에서 han 미션과 슬롯 상태를 읽을 때 쓴다. A
 
 - 프로젝트 코드, `adapter.json`, `local.json`, `mission.md`, TSV, `ACTIVE`는 읽기만 한다.
 - `mission_state.py` 쓰기 명령과 `slots.py`의 `create`·`refresh`·`run`·`remove`는 부르지 않는다.
-- Grok에는 SessionStart 주입과 미션 가드 훅이 없다.
+- SessionStart 훅은 `new`·`load` 이벤트를 지원한다. 읽기 전용 조회에서는 세션 시작 훅의 상태나 규칙 주입을 미션 진행 근거로 대신하지 않는다.
 
 ## 호출
 

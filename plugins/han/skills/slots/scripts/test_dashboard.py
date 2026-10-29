@@ -599,6 +599,132 @@ def write_lines(path, entries):
     path.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
 
 
+def grok_update(update, at, session="example-session", **fields):
+    return {"params": {"sessionId": session, "_meta": {"agentTimestampMs": at}, "update": {"sessionUpdate": update, **fields}}}
+
+
+def test_read_session_understands_grok_completion_and_new_activity(tmp_path):
+    transcript = tmp_path / "updates.jsonl"
+    entries = [grok_update("user_message_chunk", 1792452600000), grok_update("agent_message_chunk", 1792452620000)]
+    write_lines(transcript, entries)
+    mission = dashboard.Mission("slot1", "run-1", str(tmp_path), True)
+    dashboard.read_session(mission, str(transcript))
+    assert not mission.waiting_input and not mission.background
+    entries += [grok_update("turn_completed", 1792452622000)]
+    write_lines(transcript, entries)
+    dashboard.read_session(mission, str(transcript))
+    assert mission.waiting_input and mission.last_activity == 1792452622
+    entries += [grok_update("tool_call_update", 1792452623000)]
+    write_lines(transcript, entries)
+    dashboard.read_session(mission, str(transcript))
+    assert not mission.waiting_input and mission.last_activity == 1792452623
+
+
+@pytest.mark.parametrize("status", ["running", "completed", "failed", "cancelled"])
+def test_grok_background_uses_subagent_lifecycle_instead_of_child_turn_completion(tmp_path, monkeypatch, status):
+    grok_home = tmp_path / "native-grok"
+    monkeypatch.setenv("GROK_HOME", str(grok_home))
+    sessions = grok_home / "sessions" / "workspace-hash"
+    transcript = sessions / "example-session" / "updates.jsonl"
+    transcript.parent.mkdir(parents=True)
+    write_lines(transcript, [grok_update("turn_completed", 1792452622000)])
+    child = sessions / "child-session" / "updates.jsonl"
+    child.parent.mkdir()
+    updates = [grok_update("user_message_chunk", 1792452623000, "child-session")]
+    if status == "running":
+        updates += [grok_update("turn_completed", 1792452624000, "child-session")]
+    write_lines(child, updates)
+    metadata = {"subagent_id": "worker-1", "parent_session_id": "example-session", "child_session_id": "child-session", "status": status,
+                "started_at": "2026-10-20T02:10:23Z", "completed_at": ""}
+    if status in ("completed", "failed", "cancelled"):
+        metadata["completed_at"] = "2026-10-20T02:10:25Z"
+    folder = transcript.parent / "subagents" / "worker-1"
+    folder.mkdir(parents=True)
+    (folder / "meta.json").write_text(json.dumps(metadata), encoding="utf-8")
+    mission = dashboard.Mission("slot1", "run-1", str(tmp_path), True)
+    dashboard.read_session(mission, str(transcript))
+    assert mission.waiting_input
+    assert mission.background == (status == "running")
+    assert mission.last_activity >= 1792452623
+
+
+def test_grok_running_subagent_without_child_transcript_stays_visible(tmp_path, monkeypatch):
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok"))
+    transcript = tmp_path / "example-session" / "updates.jsonl"
+    transcript.parent.mkdir()
+    write_lines(transcript, [grok_update("turn_completed", 1792452622000)])
+    folder = transcript.parent / "subagents" / "worker-1"
+    folder.mkdir(parents=True)
+    (folder / "meta.json").write_text(json.dumps({
+        "subagent_id": "worker-1", "parent_session_id": "example-session", "child_session_id": "child-session", "status": "running",
+        "started_at": "2026-10-20T02:10:23Z",
+    }), encoding="utf-8")
+    mission = dashboard.Mission("slot1", "run-1", str(tmp_path), True)
+    dashboard.read_session(mission, str(transcript))
+    assert mission.background and mission.waiting_input
+    assert mission.last_activity == dashboard.parse_time("2026-10-20T02:10:23Z")
+
+
+def test_grok_lifecycle_fallback_tracks_running_child_without_transcript(tmp_path, monkeypatch):
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "grok"))
+    transcript = tmp_path / "updates.jsonl"
+    identity = {"subagent_id": "worker-1", "parent_session_id": "example-session",
+                "child_session_id": "child-session", "attempt_id": "attempt-1"}
+    updates = [grok_update("turn_completed", 1792452622000), grok_update("subagent_spawned", 1792452623000, **identity)]
+    write_lines(transcript, updates)
+    mission = dashboard.Mission("slot1", "run-1", str(tmp_path), True)
+    dashboard.read_session(mission, str(transcript))
+    assert mission.background and mission.waiting_input and mission.last_activity == 1792452623
+    updates += [grok_update("subagent_finished", 1792452624000, status="completed", **identity)]
+    write_lines(transcript, updates)
+    dashboard.read_session(mission, str(transcript))
+    assert not mission.background and mission.waiting_input and mission.last_activity == 1792452624
+
+
+def test_transcript_of_finds_grok_native_session(world, tmp_path, monkeypatch):
+    session = "11111111-2222-4333-8444-555555555555"
+    grok_home = tmp_path / "native-grok"
+    monkeypatch.setenv("GROK_HOME", str(grok_home))
+    transcript = grok_home / "sessions" / "workspace-hash" / session / "updates.jsonl"
+    transcript.parent.mkdir(parents=True)
+    write_lines(transcript, [grok_update("turn_completed", 1792452622000)])
+    folder = world.mission("slot1", "run-1")
+    (folder.parent / "ACTIVE").write_text(json.dumps({"id": folder.name, "session": session}), encoding="utf-8")
+    location = dashboard.locations(world.config)[1]
+    mission = dashboard.Mission("slot1", "run-1", str(folder), True)
+    assert dashboard.transcript_of(location, mission, []) == str(transcript)
+
+
+def test_dashboard_runtime_option_reaches_adapter_and_config(world, monkeypatch):
+    seen = []
+    original_locate, original_read = slots.locate, slots.read_adapter
+
+    def locate(project, runtime):
+        seen.append(("locate", runtime))
+        return original_locate(project, runtime)
+
+    def read(path, runtime):
+        seen.append(("read", runtime))
+        return original_read(path, runtime)
+
+    class FakeServer:
+        def __init__(self, config, port):
+            seen.append(("config", config.runtime))
+            self.server_address = ("127.0.0.1", port)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt()
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(slots, "locate", locate)
+    monkeypatch.setattr(slots, "read_adapter", read)
+    monkeypatch.setattr(dashboard, "Server", FakeServer)
+    assert dashboard.main(["--runtime", "grok", "--project", str(world.main)]) == slots.OK
+    assert seen == [("locate", "grok"), ("read", "grok"), ("config", "grok")]
+
+
 def claude_turn(stop_reason, at="2026-10-20T02:31:42Z"):
     return [
         {"type": "user", "timestamp": "2026-10-20T02:30:00Z", "message": {"role": "user", "content": "진행해"}},

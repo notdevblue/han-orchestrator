@@ -25,7 +25,7 @@ $han=(Get-Content "$env:USERPROFILE\.claude\plugins\installed_plugins.json" -Raw
 
 | han 스킬 | 코디네이터 셸에서 써도 됨(읽기) | 코디네이터 셸에서 하지 않음(깨운 봇 또는 선택 세션) |
 | --- | --- | --- |
-| mission (`mission_state.py`) | `active`, `status`, `context`, `transcripts`, `unit list`, `review-scope`, `document list` | 마커 `echo han-mission open/resume/close`, `init`, `mission set`, `unit` 쓰기, `verify`, `review`, `complete`, `document share/hide`, `close-stale --force-close-stale` |
+| mission (`mission_state.py`) | `active`, `status`, `context`, `transcripts`, `unit list`, `review-scope`, `document list` | 바깥 코디네이터의 미션 파일 쓰기. 실행 세션의 open/resume/close 마커는 가드가 처리하며, `init`은 ACTIVE와 현재 세션 확인 뒤 실행 |
 | mission `close-stale`(플래그 없음) | 미리보기만. 사용자에게 **제안**까지. 실행 전 `doctor`/`active`로 충분하면 그것을 쓴다 | 실제 닫기는 사용자가 미션 id를 지정해 승인한 뒤 깨운 봇, 선택 세션, 또는 사용자가 직접 |
 | slots (`slots.py`) | `status [이름...]` | `create`, `refresh`, `run`, `remove`(미션 중 가드가 막음, 워크스페이스를 바꿈) |
 | slots 대시보드 (`dashboard.py`) | 이미 떠 있으면 `GET http://127.0.0.1:8765/` 읽기 | 띄우기·재시작은 사용자 요청 때만 |
@@ -40,6 +40,6 @@ $han=(Get-Content "$env:USERPROFILE\.claude\plugins\installed_plugins.json" -Raw
 
 ## 하지 않는 것
 
-- ACTIVE·`mission.md`·`*.tsv`·`allow-once` 직접 쓰기, 마커 실행, `--force-close-stale`
+- ACTIVE·`mission.md`·`*.tsv`·`allow-once` 직접 쓰기, 바깥 코디네이터에서 마커 실행, `--force-close-stale`
 - 슬롯 만들기·갱신·실행·삭제, p4 쓰기 명령
 - Grok 쪽에 미션 상태 사본·별도 상태 기계를 만드는 것

@@ -25,10 +25,11 @@
 - 커밋을 push하고 원격 브랜치의 SHA가 일치하는지 확인한다. force push는 하지 않는다.
 - Claude는 `claude plugin marketplace update han-orchestrator`와 `claude plugin update han@han-orchestrator`를 실행한다.
 - Codex는 `codex plugin add han-codex@han-orchestrator-codex`로 설치본을 갱신한다.
-- Grok은 `~/.grok/config.toml`의 `[skills].paths`가 이번 push 체크아웃의 등록 스킬 여덟 폴더만 가리키는지 확인한다. 폴더는 `han-status`·`han-doctor`·`han-mission-brief`·`han-run`·`han-mission`·`han-slots`·`han-adapter-init`·`han-distill`이다. `~/.grok/skills`의 han 정션이 있으면 같은 폴더를 가리키는지 본다. `han-watch`와 `han-handoff`는 등록하지 않는다.
-- 그 경로의 스킬 파일과 그 파일이 부르는 공유 스크립트를 push한 커밋과 대조한다. 다른 작업의 미커밋 변경이 그 파일에 있으면 반영으로 치지 않는다.
+- Grok은 `~/.grok/plugins/han`이 이번 push 체크아웃의 `plugins/han`을 가리키도록 등록한다. 기존 대상이 있으면 실제 대상을 확인하고 덮어쓰지 않는다. 전환 전 `~/.grok/config.toml`과 `~/.grok/skills/han-*` 링크 정보를 저장하고, 기존 han 전용 `[skills].paths` 항목과 `han-*` 링크만 등록 해제한다. 다른 스킬 설정은 보존한다.
+- `grok inspect`에서 native `han`이 이번 체크아웃을 선택하고 스킬 8개·에이전트 0개·훅 1개를 읽는지 확인한다. `han-watch`·`han-handoff`가 없어야 한다. `grok plugin install` 성공만으로 선택된 플러그인을 판단하지 않는다. compat `han`이 native 경로보다 우선할 수 있다.
+- 선택된 native 경로의 manifest·스킬 파일과 그 파일이 부르는 공유 스크립트를 push한 커밋과 대조한다. 다른 작업의 미커밋 변경이 그 파일에 있으면 반영으로 치지 않는다.
 - 설치 버전과 캐시 파일을 실제 push한 커밋의 배포 내용과 대조한다. 다른 작업의 미커밋 변경이 있으면 커밋된 배포본을 기준으로 업데이트하며, 작성 중인 내용을 함께 설치하지 않는다.
-- 배포 내용이 그대로이고 설치본 일치까지 확인되면 최신 상태로 보고 불필요한 재설치는 생략한다.
+- 배포 내용이 그대로이고 `grok inspect`의 선택 경로·manifest 내용이 일치하면 최신 상태로 보고 불필요한 재등록은 생략한다.
 - 대시보드 변경이면 대상 프로세스를 확인해 다시 시작하고 실제 HTTP 응답까지 확인한다. 실행 중인 Grok 세션은 스킬과 저장소 지침을 다시 읽지 않으므로 재시작을 알린다. 다른 실행 중 세션의 지침 재로드·재시작이 필요하면 알린다.
 - push·업데이트·반영 확인이 실패하면 실패 지점과 남은 작업을 보고한다. 확인하지 못한 단계를 완료로 표시하지 않는다.
 - 완료 보고에는 커밋 SHA, push 결과, 설치 버전, Grok 경로 확인, 검증 결과를 짧게 적는다.

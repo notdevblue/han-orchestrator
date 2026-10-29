@@ -18,6 +18,7 @@ SKILLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, os.path.join(SKILLS_DIR, "mission", "scripts"))
 import mission_state  # noqa: E402
 import slots  # noqa: E402
+import grok_transcript
 import mission_guard  # noqa: E402 (slots 가 hooks 폴더를 sys.path 에 넣음)
 import question_summary  # noqa: E402
 import question_records
@@ -697,10 +698,13 @@ def transcript_of(location, mission, sessions):
     if found or not mission_state.SESSION_ID.fullmatch(session):
         return found
     home = os.path.expanduser("~")
-    return mission_state.search_claude(session, home) or mission_state.search_codex(session, home)
+    return mission_state.search_claude(session, home) or mission_state.search_codex(session, home) or grok_transcript.find_transcript(session, home)
 
 
 def read_turn(path):
+    if grok_transcript.is_transcript(path):
+        activity = grok_transcript.activity(path)
+        return parse_time(activity["last_timestamp"]), activity["completed"], {}
     last, ended, handed_back = 0.0, False, False
     stopped = {}
     with open(path, "rb") as f:
@@ -771,7 +775,17 @@ def read_session(mission, transcript):
     if not transcript:
         return
     mission.last_activity, mission.waiting_input, stopped = read_turn(transcript)
-    # 하위 에이전트는 모델 응답을 기다리는 동안 기록을 안 써서, 보고로 끝났거나 종료 알림이 왔는지로 판정함
+    if grok_transcript.is_transcript(transcript):
+        children = grok_transcript.subagent_records(transcript)
+        mission.background = any(child["status"] == "running" for child in children)
+        for child in children:
+            last = max(parse_time(child["started_at"]), parse_time(child["completed_at"]))
+            path = child["transcript"]
+            if path and os.path.isfile(path):
+                activity = grok_transcript.activity(path)
+                last = max(last, parse_time(activity["last_timestamp"]))
+            mission.last_activity = max(mission.last_activity, last)
+        return
     for agent, path in recent_subagents(transcript):
         last, ended, _ = read_turn(path)
         notified = agent in stopped and stopped[agent] >= last
@@ -1856,6 +1870,7 @@ class Server(ThreadingHTTPServer):
 
 def build_parser():
     parser = argparse.ArgumentParser(prog="dashboard.py", description="미션 상태·질문 대시보드 (읽기 전용 로컬 서버)")
+    parser.add_argument("--runtime", choices=slots.RUNTIMES)
     parser.add_argument("--project", help="어댑터를 찾기 시작할 폴더 (기본: 현재 폴더)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--open", action="store_true", help="브라우저로 열기")
@@ -1870,6 +1885,7 @@ def main(argv=None, runtime="claude"):
         args = build_parser().parse_args(argv)
     except SystemExit as e:
         return slots.USAGE if e.code else slots.OK
+    runtime = args.runtime or runtime
     try:
         located = slots.locate(args.project, runtime)
         config = slots.Config(located, slots.read_adapter(located.adapter_path, runtime), runtime)

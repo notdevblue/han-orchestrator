@@ -2,6 +2,7 @@ import glob
 import json
 import os
 import sys
+from hook_runtime import normalize_payload
 
 DISABLE_ENV = "HAN_RULES_DISABLE"
 PLUGIN_ROOT_ENV = "CLAUDE_PLUGIN_ROOT"
@@ -21,7 +22,7 @@ SHELL_ESCAPED = ('"', "$", "`")
 
 
 def plugin_root():
-    configured = os.environ.get(PLUGIN_ROOT_ENV)
+    configured = os.environ.get("GROK_PLUGIN_ROOT") or os.environ.get(PLUGIN_ROOT_ENV)
     if configured:
         return configured
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -146,7 +147,9 @@ def render_output(event, context, warnings):
     return output
 
 
-def decide(payload, runtime="claude"):
+def decide(payload, runtime=""):
+    payload = normalize_payload(payload, runtime)
+    runtime = payload["han_runtime"]
     event = event_of(payload)
     warnings = []
     contexts = []
@@ -154,11 +157,14 @@ def decide(payload, runtime="claude"):
         for export_warning in (export_registry_dir(), export_transcript_path(payload)):
             if export_warning:
                 warnings.append(export_warning)
-    if event == SESSION_START and runtime == "codex":
+    if event == SESSION_START and runtime in ("codex", "grok"):
         transcript = payload.get("transcript_path")
         if isinstance(transcript, str) and transcript.strip():
             contexts.append(f"han-distill 대화 기록 경로 (--transcript): {json.dumps(transcript.strip(), ensure_ascii=False)}")
-    enabled = os.environ.get("HAN_CODEX_INJECT_RULES", "").strip().lower() in INJECT_VALUES if runtime == "codex" else inject_enabled()
+    if runtime == "claude":
+        enabled = inject_enabled()
+    else:
+        enabled = os.environ.get(f"HAN_{runtime.upper()}_INJECT_RULES", "").strip().lower() in INJECT_VALUES
     if not disabled() and enabled:
         context, limit_warning = fit_limit(build_context(read_rules(runtime, event), human_document_context(runtime)))
         contexts.append(context)
@@ -167,7 +173,7 @@ def decide(payload, runtime="claude"):
     return render_output(event, "\n\n".join(filter(None, contexts)), warnings)
 
 
-def main(runtime="claude"):
+def main(runtime=""):
     try:
         output = decide(read_payload(), runtime)
     except Exception as e:  # 훅 실패로 세션을 막지 않고 알림만

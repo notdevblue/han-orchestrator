@@ -3,7 +3,7 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|clear|compact|fork",
+        "matcher": "startup|resume|clear|compact|fork|new|load",
         "hooks": [
           {
             "type": "command",
@@ -28,7 +28,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch",
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch|run_terminal_command|Shell|search_replace|hashline_edit|write|StrReplace|EditNotebook",
         "hooks": [
           {
             "type": "command",
@@ -41,7 +41,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch",
+        "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit|apply_patch|ApplyPatch|run_terminal_command|Shell|search_replace|hashline_edit|write|StrReplace|EditNotebook",
         "hooks": [
           {
             "type": "command",

@@ -698,6 +698,34 @@ def test_transcripts_without_sessions_file(opened):
     assert opened.ok("transcripts").startswith("세션 기록 없음")
 
 
+def test_transcripts_finds_grok_session_and_ignores_claude_subagent_layout(opened, home, monkeypatch):
+    base = home / "custom-grok"
+    monkeypatch.setenv("GROK_HOME", str(base))
+    folder = base / "sessions/encoded/sample-session"
+    folder.mkdir(parents=True)
+    transcript = folder / "updates.jsonl"
+    transcript.write_text(json.dumps({"timestamp": 1800000000, "params": {"sessionId": "sample-session",
+        "update": {"sessionUpdate": "turn_completed"}}}) + "\n", encoding="utf-8")
+    fake_subagents = folder / "updates/subagents"
+    fake_subagents.mkdir(parents=True)
+    (fake_subagents / "agent.jsonl").write_text("{}", encoding="utf-8")
+    write_sessions(opened, ("open", "sample-session", "stale-path.jsonl"))
+    assert opened.ok("transcripts") == f"sample-session {transcript}"
+
+
+def test_transcripts_prefers_grok_store_for_grok_runtime(opened, home, monkeypatch):
+    monkeypatch.setenv("GROK_HOME", str(home / ".grok"))
+    grok = home / ".grok/sessions/encoded/sample-session/updates.jsonl"
+    grok.parent.mkdir(parents=True)
+    grok.write_text(json.dumps({"params": {"sessionId": "sample-session", "update": {"sessionUpdate": "turn_completed"}}}), encoding="utf-8")
+    claude = home / ".claude/projects/encoded/sample-session.jsonl"
+    claude.parent.mkdir(parents=True)
+    claude.write_text("{}", encoding="utf-8")
+    write_sessions(opened, ("open", "sample-session", ""))
+    ctx = mission_state.Context(ADAPTER, str(opened.root / "state"), "m1", "grok", str(opened.root))
+    assert mission_state.cmd_transcripts(ctx, object()) == [f"sample-session {grok}"]
+
+
 def test_cli_error_is_one_stderr_line_with_exit_code_1(tmp_path):
     result = subprocess.run(
         [sys.executable, "-B", str(SCRIPT), "--project", str(tmp_path), "status"],

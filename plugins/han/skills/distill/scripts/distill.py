@@ -7,6 +7,9 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "grok", "scripts")))
+import grok_transcript
+
 OK = 0
 FAILED = 1
 
@@ -58,12 +61,16 @@ def fold(text):
 def log_path(runtime="claude"):
     if runtime == "codex":
         base = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+    elif runtime == "grok":
+        base = grok_transcript.grok_home()
     else:
         base = os.path.join(os.path.expanduser("~"), ".claude")
     return os.environ.get(LOG_ENV) or os.path.join(base, "han", "distill", "log.tsv")
 
 
 def session_of(transcript):
+    if grok_transcript.is_transcript(transcript):
+        return grok_transcript.session_id(transcript)
     with open(transcript, encoding="utf-8") as f:
         try:
             entry = json.loads(f.readline())
@@ -136,7 +143,26 @@ def user_text(entry):
     return f"{name.group(1).strip()} {arguments}" if arguments else ""
 
 
+def read_grok_messages(path):
+    messages = []
+    previous = ""
+    for entry in grok_transcript.read_messages(path):
+        if entry["role"] == "assistant":
+            previous = fold(entry["text"]) or previous
+        else:
+            body = entry["text"]
+            if body.lstrip().startswith(CODEX_CONTEXT_PREFIXES):
+                continue
+            text = user_text({"message": {"content": body}})
+            if text:
+                messages.append(Message(entry["timestamp"], previous[-TAIL_LIMIT:], text))
+                previous = ""
+    return messages
+
+
 def read_messages(path):
+    if grok_transcript.is_transcript(path):
+        return read_grok_messages(path)
     messages = []
     previous = ""
     with open(path, encoding="utf-8") as f:
@@ -232,16 +258,18 @@ def cmd_record(args):
 
 def build_parser(runtime="claude"):
     parser = OneLineParser(prog="distill.py", description="대화 기록에서 사용자 메시지 추출, 처리 지점 기록")
-    parser.set_defaults(runtime=runtime)
+    parser.add_argument("--runtime", choices=("claude", "codex", "grok"), default=runtime)
     sub = parser.add_subparsers(dest="command", required=True, parser_class=OneLineParser)
 
     extract = sub.add_parser("extract")
+    extract.add_argument("--runtime", choices=("claude", "codex", "grok"), default=argparse.SUPPRESS)
     extract.set_defaults(handler=cmd_extract)
     extract.add_argument("--transcript", action="append", default=[])
     extract.add_argument("--out", required=True)
     extract.add_argument("--all", action="store_true")
 
     record = sub.add_parser("record")
+    record.add_argument("--runtime", choices=("claude", "codex", "grok"), default=argparse.SUPPRESS)
     record.set_defaults(handler=cmd_record)
     record.add_argument("--session", required=True)
     record.add_argument("--until", required=True)

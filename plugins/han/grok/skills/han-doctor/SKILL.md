@@ -24,7 +24,7 @@ python "<repo>/plugins/han/grok/scripts/han_state.py" snapshot --project "<프�
    - `HAN_REPO`를 지정했는데 `<HAN_REPO>/adapters`가 없음
    - 저장소에서 직접 실행하는데 `<repo>/adapters`가 없음
 4. 계약은 `plugins/han/skills/mission/references/adapter-schema.md`의 "Grok에서 상태 읽기"다.
-   Claude 플러그인 설정과 Codex `config.toml`은 이 조회가 읽지 않는다. SessionStart 주입도 없다.
+   Claude 플러그인 설정과 Codex `config.toml`은 이 조회가 읽지 않는다. 훅 경로·패키징은 설치 환경에서 별도로 확인한다.
 
 진단은 여기서 끝난다. 어댑터 초안을 쓰지 않는다. 이 스킬은 미션을 열지 않는다.
 

@@ -13,6 +13,8 @@ SKILLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__fil
 HOOKS_DIR = os.path.normpath(os.path.join(SKILLS_DIR, "..", "hooks"))
 sys.path.insert(0, HOOKS_DIR)
 sys.path.insert(0, os.path.join(SKILLS_DIR, "slots", "scripts"))
+sys.path.insert(0, os.path.join(SKILLS_DIR, "..", "grok", "scripts"))
+import grok_transcript
 import mission_guard  # noqa: E402
 import slots  # noqa: E402
 import verification
@@ -893,7 +895,11 @@ def cmd_transcripts(ctx, args):
     for row in read_table(path, mission_guard.SESSIONS_HEADER):
         if not recorded.get(row["session"]):
             recorded[row["session"]] = row["transcript"]
-    searches = (search_claude, search_codex) if ctx.runtime == "claude" else (search_codex, search_claude)
+    searches = {
+        "claude": (search_claude, search_codex, grok_transcript.find_transcript),
+        "codex": (search_codex, search_claude, grok_transcript.find_transcript),
+        "grok": (grok_transcript.find_transcript, search_codex, search_claude),
+    }[ctx.runtime]
     home = os.path.expanduser("~")
     lines = []
     for session, transcript in recorded.items():
@@ -906,6 +912,9 @@ def cmd_transcripts(ctx, args):
             lines.append(f"없음: {session}")
             continue
         lines.append(f"{session} {found}")
+        if grok_transcript.is_transcript(found):
+            lines.extend(f"  {child}" for child in grok_transcript.subagent_transcripts(found, home))
+            continue
         subagents = os.path.join(os.path.splitext(found)[0], "subagents")
         if os.path.isdir(subagents):
             lines.extend(f"  {os.path.join(subagents, n)}" for n in sorted(os.listdir(subagents)) if n.endswith(".jsonl"))
