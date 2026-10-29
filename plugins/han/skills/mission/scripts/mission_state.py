@@ -46,6 +46,7 @@ NEEDS_HUMAN = "needs-human"
 NONE_CELL = "-"
 VERDICT_LIMIT = 4
 
+RUNTIMES = ("claude", "codex", "grok")
 UNIT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 CONFIRM_KEY = re.compile(r"[A-Za-z]\d*")
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
@@ -1001,9 +1002,11 @@ def build_parser():
     parser = OneLineParser(prog="mission_state.py", description="미션 상태 파일 쓰기")
     parser.add_argument("--project", help="어댑터를 찾기 시작할 폴더 (기본: 현재 폴더)")
     parser.add_argument("--mission", help="미션 id (기본: <stateDir>/ACTIVE 의 id)")
+    parser.add_argument("--runtime", choices=RUNTIMES, default=None, help="어댑터 검색. 기본은 호출 런타임, Grok은 grok")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--project", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     common.add_argument("--mission", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    common.add_argument("--runtime", choices=RUNTIMES, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
     def leaf(parent, name, handler):
@@ -1116,6 +1119,7 @@ def main(argv=None, runtime="claude"):
             args = build_parser().parse_args(argv)
         except SystemExit:
             return OK
+        runtime = getattr(args, "runtime", None) or runtime
         try:
             located = slots.locate(args.project, runtime)
             adapter = slots.read_adapter(located.adapter_path, runtime)

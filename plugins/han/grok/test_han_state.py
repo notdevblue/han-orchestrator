@@ -354,14 +354,28 @@ def test_snapshot_checks_configured_slot_active_without_table_or_row(tmp_path, t
 
 def test_grok_skill_registration_names():
     skills = SCRIPT.parents[1] / "skills"
-    registered = ("han-status", "han-doctor", "han-mission-brief", "han-run")
+    registered = (
+        "han-status", "han-doctor", "han-mission-brief", "han-run",
+        "han-mission", "han-slots", "han-adapter-init", "han-distill",
+    )
     for name in registered:
         text = (skills / name / "SKILL.md").read_text(encoding="utf-8")
         assert f"name: {name}\n" in text
     run = (skills / "han-run" / "SKILL.md").read_text(encoding="utf-8")
     assert "CLAUDE.md" in run and ".claude/rules/" in run
-    assert "mission_state.py" in run and "han_state.py" in run
+    assert "mission_state.py" in run and "han_state.py" in run and "--runtime grok" in run
     assert "~/.grok/rules/" in run and "submit" in run
+    mission = (skills / "han-mission" / "SKILL.md").read_text(encoding="utf-8")
+    slot_skill = (skills / "han-slots" / "SKILL.md").read_text(encoding="utf-8")
+    adapter = (skills / "han-adapter-init" / "SKILL.md").read_text(encoding="utf-8")
+    distill = (skills / "han-distill" / "SKILL.md").read_text(encoding="utf-8")
+    assert "--runtime grok" in mission and "mission_state.py" in mission
+    assert "plugins/han/skills/mission/references/" in mission and "--force-tier" in mission
+    assert "사람에게 묻는 법" not in mission and "ACTIVE" in mission
+    assert "--runtime grok" in slot_skill and "slots.py" in slot_skill and "han-run" in slot_skill
+    assert "ready" in slot_skill and "han-watch" not in slot_skill
+    assert "check_guard.py" in adapter and "adapter-schema.md" in adapter and "pluginConfigs" in adapter
+    assert "distill.py" in distill and "--transcript" in distill and "HAN_TRANSCRIPT" in distill
     watch = (skills / "han-watch" / "SKILL.md").read_text(encoding="utf-8")
     handoff = (skills / "han-handoff" / "SKILL.md").read_text(encoding="utf-8")
     assert "등록하는 스킬이 아니다" in watch and "han-status" in watch and "han-doctor" in watch
@@ -376,8 +390,11 @@ def test_grok_skill_registration_names():
     assert "Claude·Codex의 han이 맡는다" not in status
     assert "읽기 전용" in doctor and "han-mission-brief" in doctor
     readme = (SCRIPT.parents[1] / "README.md").read_text(encoding="utf-8")
+    paths = readme.split("paths = [", 1)[1].split("]", 1)[0]
     for name in registered:
         assert name in readme
+        assert f"skills/{name}" in paths
+    assert "han-watch" not in paths and "han-handoff" not in paths
     assert "han-watch" in readme and "등록하지 않는다" in readme
     assert "<project>" in readme and "<slot-path>" in readme and "실행 규칙" in readme
 

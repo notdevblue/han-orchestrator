@@ -1,6 +1,6 @@
 # Grok 바깥 층 초안
 
-등록하는 Grok 스킬은 `plugins/han/grok/`의 `han-status`, `han-doctor`, `han-mission-brief`, `han-run` 네 개다.
+등록하는 Grok 스킬은 `plugins/han/grok/`의 `han-status`, `han-doctor`, `han-mission-brief`, `han-run`, `han-mission`, `han-slots`, `han-adapter-init`, `han-distill`이다.
 이 폴더의 초안은 그 절차를 가리키는 메모이며 Grok 스킬로 등록하지 않는다.
 구현 절차의 등록본은 `plugins/han/grok/skills/han-run/SKILL.md`다. 이 초안 폴더에는 실행 스킬을 두지 않는다.
 

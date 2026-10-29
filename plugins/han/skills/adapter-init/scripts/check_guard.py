@@ -1,6 +1,6 @@
 """어댑터 guard.deny 규칙을 표본 명령에 돌려 기대(deny|allow)와 맞는지 확인함.
 
-사용: python check_guard.py <adapter.json|registry 어댑터 이름> [cases.json|cases.tsv]
+사용: python check_guard.py [--runtime claude|codex|grok] <adapter.json|registry 어댑터 이름> [cases.json|cases.tsv]
   .json  [{"expect": "deny|allow", "command": "...", "tool": "Bash|PowerShell"}]
          tool 은 생략하면 Bash. 명령에 줄바꿈 가능
   .tsv   기대<TAB>명령 한 줄씩(항상 Bash, 줄바꿈 해석 없음), # 로 시작하는 줄은 주석
@@ -117,9 +117,23 @@ def doctor():
     return 0 if runs else 1
 
 
+RUNTIMES = ("claude", "codex", "grok")
+
+
+def consume_runtime(argv, runtime):
+    if not argv or argv[0] != "--runtime":
+        return argv, runtime, None
+    if len(argv) < 2 or argv[1] not in RUNTIMES:
+        return None, runtime, "ERROR --runtime 은 claude, codex, grok 중 하나"
+    return argv[2:], argv[1], None
+
+
 def main(runtime="claude"):
     sys.stdout.reconfigure(encoding="utf-8")
-    args = sys.argv[1:]
+    args, runtime, error = consume_runtime(sys.argv[1:], runtime)
+    if error:
+        print(error)
+        return 2
     if "--doctor" in args:
         return doctor()
     if len(args) not in (1, 2):

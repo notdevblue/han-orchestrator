@@ -899,3 +899,16 @@ def test_question_cli_editorial_requires_explicit_flag_and_preserves_answer_stat
     before = source.read_bytes()
     assert opened.fail("question", "publish", "--input", draft, "--expect-revision", "2", "--editorial")
     assert source.read_bytes() == before
+
+
+def test_runtime_grok_reads_grok_adapter(tmp_path, capsys, monkeypatch):
+    for name in ("HAN_ADAPTERS_DIR", "HAN_REPO", "CLAUDE_PROJECT_DIR", "CLAUDE_PLUGIN_OPTION_ADAPTERS_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    root = tmp_path / "game"
+    (root / ".grok" / "orchestrator").mkdir(parents=True)
+    (root / ".grok" / "orchestrator" / "adapter.json").write_text(json.dumps(ADAPTER), encoding="utf-8")
+    (root / "state").mkdir()
+    code = mission_state.main(["--runtime", "grok", "--project", str(root), "active"])
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert "ACTIVE 없음" in captured.out

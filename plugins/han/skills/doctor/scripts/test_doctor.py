@@ -50,6 +50,23 @@ def test_doctor_without_registry_fails(tmp_path, monkeypatch):
     assert levels(report, "registry") == ["FAIL"]
 
 
+def test_doctor_grok_runtime_uses_shared_mission_script(tmp_path, monkeypatch, capsys):
+    adapters, main = make_registry(tmp_path)
+    active = main / "state" / "ACTIVE"
+    active.write_text(json.dumps({"id": "m1", "session": "s"}), encoding="utf-8")
+    old = 1_000_000_000
+    os.utime(active, (old, old))
+    monkeypatch.setenv("HAN_ADAPTERS_DIR", str(adapters))
+    report = doctor.run("grok")
+    assert levels(report, "registry") == ["OK"]
+    assert doctor.MISSION_STATE["grok"] == doctor.MISSION_STATE["claude"]
+    doctor.main(["--runtime", "grok"])
+    out = capsys.readouterr().out.replace("\\", "/")
+    assert 'skills/mission/scripts/mission_state.py" --runtime grok --project' in out
+    assert "codex/skills" not in out
+    assert active.exists()
+
+
 def test_doctor_cli_json(tmp_path, monkeypatch, capsys):
     adapters, _ = make_registry(tmp_path, cases=False)
     monkeypatch.setenv("HAN_ADAPTERS_DIR", str(adapters))

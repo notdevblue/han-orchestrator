@@ -48,8 +48,8 @@ Grok 코디네이터는 상태를 읽고 메인 또는 등록된 슬롯의 실�
 Claude(`/han:mission`)와 Codex(`$han-codex:han-mission`)는 선택 경로다.
 조회 스크립트 `plugins/han/grok/scripts/han_state.py`의 `snapshot`은 `ACTIVE`·`mission.md`·`slots.tsv`를 읽기만 한다.
 `brief --runtime grok`는 SendToAgent 인계 블록을 출력하고, `claude`·`codex`는 붙여 넣을 문장을 출력한다. 조회 명령은 미션 파일을 쓰지 않는다.
-Grok Bot에 등록하는 스킬은 `han-status`, `han-doctor`, `han-mission-brief` 세 개다.
-`han-watch`와 `han-handoff`는 그 셋을 가리키는 저장소 안내이며 등록하지 않는다.
+Grok CLI·Bot에 등록하는 스킬은 `han-status`, `han-doctor`, `han-mission-brief`, `han-run`, `han-mission`, `han-slots`, `han-adapter-init`, `han-distill`이다.
+`han-watch`와 `han-handoff`는 그 등록 스킬을 가리키는 저장소 안내이며 등록하지 않는다.
 
 Grok의 검색만 아래 순서를 쓴다. Claude·Codex의 검색 순서와 `runtimes.codex` 병합은 그대로다.
 가까운 폴더가 우선이고, 한 폴더 안에서는 앞에 있는 파일이 우선이다.

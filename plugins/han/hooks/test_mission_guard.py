@@ -1354,6 +1354,21 @@ def test_check_guard_cli_exit_code(tmp_path):
     assert bad.returncode == 1
 
 
+def test_check_guard_runtime_flag(tmp_path):
+    adapter = write_adapter_file(tmp_path)
+    path = tmp_path / "cases.json"
+    path.write_text(json.dumps([{"expect": "deny", "command": "p4 submit"}]), encoding="utf-8")
+    ok = subprocess.run(
+        [sys.executable, "-B", str(CHECK_GUARD), "--runtime", "grok", str(adapter), str(path)],
+        capture_output=True,
+    )
+    assert ok.returncode == 0
+    assert b"mismatches=0" in ok.stdout
+    bad = subprocess.run([sys.executable, "-B", str(CHECK_GUARD), "--runtime", "nope"], capture_output=True)
+    assert bad.returncode == 2
+    assert b"ERROR --runtime" in bad.stdout
+
+
 def test_check_guard_default_cases_file_next_to_adapter(tmp_path):
     adapter = write_adapter_file(tmp_path)
     (adapter.parent / "guard-cases.json").write_text(

@@ -24,14 +24,15 @@ Main 또는 slotN에서 `grok`를 실행하면 그 CLI가 구현자다. SendToAg
 ## 머지 뒤에 등록하는 스킬
 
 마켓플레이스 설치는 없다. `claude plugin`과 `codex plugin`으로 Grok 스킬을 넣지 않는다.
-등록은 아래 네 폴더뿐이다. `han-status`·`han-doctor`·`han-mission-brief`의 역할은 그대로다. 실행 절차만 `han-run`이 맡는다.
+등록은 아래 여덟 폴더다. `han-status`·`han-doctor`·`han-mission-brief`의 역할은 그대로다. 실행 절차는 `han-run`이다.
+미션 상태 쓰기는 `han-mission`, 슬롯 조작은 `han-slots`, 어댑터 초안은 `han-adapter-init`, 피드백 정리는 `han-distill`이다.
 
 1. 이 저장소를 Grok 셸이 닿는 PC의 `<repo>`에 받는다.
 2. 그 셸에 레지스트리를 알린다. `HAN_ADAPTERS_DIR=<저장소>/adapters` 또는 `HAN_REPO=<저장소>`.
    프로젝트의 `.grok/orchestrator/adapter.json`이 있으면 그게 먼저다. 없으면 같은 자리의 `.claude`, 그다음 `.codex` 어댑터를 읽는다.
-3. Grok CLI는 `~/.grok/config.toml`의 `[skills].paths`에 등록 폴더 네 개만 적는다.
+3. Grok CLI는 `~/.grok/config.toml`의 `[skills].paths`에 등록 폴더 여덟 개만 적는다.
    부모 `plugins/han/grok/skills`를 넣지 않는다. `han-watch`와 `han-handoff`가 CLI 발견 목록에 들어가면 안 된다.
-   같은 네 폴더를 `~/.grok/skills`에 링크해도 된다.
+   같은 여덟 폴더를 `~/.grok/skills`에 링크해도 된다.
 
 ```toml
 [skills]
@@ -40,17 +41,25 @@ paths = [
   "<repo>/plugins/han/grok/skills/han-doctor",
   "<repo>/plugins/han/grok/skills/han-mission-brief",
   "<repo>/plugins/han/grok/skills/han-run",
+  "<repo>/plugins/han/grok/skills/han-mission",
+  "<repo>/plugins/han/grok/skills/han-slots",
+  "<repo>/plugins/han/grok/skills/han-adapter-init",
+  "<repo>/plugins/han/grok/skills/han-distill",
 ]
 ```
 
-4. Grok Bot 스킬 라이브러리에도 그 네 폴더만 등록하거나, 저장소 파일을 직접 읽게 한다.
+4. Grok Bot 스킬 라이브러리에도 그 여덟 폴더만 등록하거나, 저장소 파일을 직접 읽게 한다.
    - `plugins/han/grok/skills/han-status/SKILL.md`
    - `plugins/han/grok/skills/han-doctor/SKILL.md`
    - `plugins/han/grok/skills/han-mission-brief/SKILL.md`
    - `plugins/han/grok/skills/han-run/SKILL.md`
-5. `plugins/han/grok/skills/han-watch/`와 `plugins/han/grok/skills/han-handoff/`는 위 넷을 가리키는 저장소 안내이다. 등록하지 않는다.
+   - `plugins/han/grok/skills/han-mission/SKILL.md`
+   - `plugins/han/grok/skills/han-slots/SKILL.md`
+   - `plugins/han/grok/skills/han-adapter-init/SKILL.md`
+   - `plugins/han/grok/skills/han-distill/SKILL.md`
+5. `plugins/han/grok/skills/han-watch/`와 `plugins/han/grok/skills/han-handoff/`는 위 등록 스킬을 가리키는 저장소 안내이다. 등록하지 않는다.
    `han-handoff`는 메인·슬롯의 실행 봇을 깨우는 흐름을 적는다.
-6. 스크립트는 복사하지 않는다. 스킬이 `<저장소>/plugins/han/grok/scripts/han_state.py`를 절대 경로로 부른다.
+6. 스크립트는 복사하지 않는다. 조회는 `<저장소>/plugins/han/grok/scripts/han_state.py`를, 미션·슬롯·어댑터 점검·피드백 정리는 `<저장소>/plugins/han/skills/` 아래 공유 스크립트를 절대 경로로 부른다.
 
 ## 직접 확인
 
@@ -59,10 +68,13 @@ python plugins/han/grok/scripts/han_state.py snapshot --project <프로젝트>
 python plugins/han/grok/scripts/han_state.py brief --project <프로젝트> --runtime grok --goal "한 줄 목표"
 python plugins/han/grok/scripts/han_state.py brief --project <프로젝트> --runtime grok --slot slot1 --goal "한 줄 목표"
 python plugins/han/grok/scripts/han_state.py brief --project <프로젝트> --runtime claude --goal "한 줄 목표"
+python plugins/han/skills/doctor/scripts/doctor.py --runtime grok
 python -m pytest plugins/han/grok/test_han_state.py -q -p no:cacheprovider
 ```
 
-`--runtime`을 비우면 `grok`다. `snapshot`은 파일을 만들지 않는다.
+`doctor.py --runtime grok`는 읽기 전용이다. 어댑터를 못 찾는 진단의 정본은 `han-doctor`의 snapshot이다.
+
+`han_state.py`의 `--runtime`을 비우면 `grok`다. `snapshot`은 파일을 만들지 않는다.
 `brief --runtime grok`는 슬래시 명령 없이 SendToAgent 블록을 출력한다. 블록에는 실행 대상, 목표, 프로젝트 경로, 제약, 쓰기 확인, 코드 작업의 실행 규칙이 있다.
 `claude`와 `codex`는 사람이 그 세션에 붙일 문장만 출력한다. Codex는 줄여 둔 선택 경로다.
 

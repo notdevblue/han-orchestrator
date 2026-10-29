@@ -6,7 +6,7 @@ description: "저장소 안내. Grok 스킬로 등록하지 않는다. 브리프
 # han-handoff
 
 이 폴더는 Grok에 등록하는 스킬이 아니다. 예전에 인계를 적던 이름이다.
-등록하지 않는다. 등록 스킬은 `han-status`, `han-doctor`, `han-mission-brief`, `han-run` 네 개다.
+등록하지 않는다. 등록 스킬은 `han-status`, `han-doctor`, `han-mission-brief`, `han-run`, `han-mission`, `han-slots`, `han-adapter-init`, `han-distill`이다.
 
 브리프와 절차는 `plugins/han/grok/skills/han-mission-brief/SKILL.md`를 따른다.
 

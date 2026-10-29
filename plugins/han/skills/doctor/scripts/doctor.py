@@ -1,6 +1,6 @@
 """han 설치·어댑터 상태 점검(읽기 전용). 아무것도 고치거나 닫지 않는다.
 
-사용: python doctor.py [--runtime claude|codex] [--json]
+사용: python doctor.py [--runtime claude|codex|grok] [--json]
   점검: python 스텁, 레지스트리(HAN_ADAPTERS_DIR), 어댑터+local.json 읽기 문제, guard-cases,
         ACTIVE 끊김 의심(닫기 명령은 제안만), local.json vars.unityExe, 저장소 버전과 설치본 버전.
   줄 형식: OK|WARN|FAIL <영역>: <내용>. 종료 코드: FAIL 이 있으면 1, 아니면 0.
@@ -21,9 +21,11 @@ sys.path.insert(0, os.path.join(PLUGIN, "skills", "adapter-init", "scripts"))
 import check_guard  # noqa: E402
 import mission_guard  # noqa: E402
 
+SHARED_MISSION_STATE = os.path.join(PLUGIN, "skills", "mission", "scripts", "mission_state.py")
 MISSION_STATE = {
-    "claude": os.path.join(PLUGIN, "skills", "mission", "scripts", "mission_state.py"),
+    "claude": SHARED_MISSION_STATE,
     "codex": os.path.join(PLUGIN, "codex", "skills", "han-mission", "scripts", "mission_state.py"),
+    "grok": SHARED_MISSION_STATE,
 }
 
 
@@ -75,7 +77,8 @@ def check_active(report, adapter, root, runtime):
     limit = mission_guard.stale_hours_of(adapter)
     state = mission_guard.staleness(state_dir, active, limit) if limit else None
     if state and state.stale:
-        command = f'python "{MISSION_STATE[runtime]}" --project "{root}" --mission {active.id} close-stale'
+        runtime_flag = " --runtime grok" if runtime == "grok" else ""
+        command = f'python "{MISSION_STATE[runtime]}"{runtime_flag} --project "{root}" --mission {active.id} close-stale'
         report.add(
             "WARN", "active",
             f"{root}: {active.id} {mission_guard.stale_text(state)}. 닫을지는 사용자가 정함 — 미리보기: {command} "
@@ -203,7 +206,7 @@ def main(argv=None, runtime="claude"):
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="han doctor (읽기 전용)")
-    parser.add_argument("--runtime", choices=("claude", "codex"), default=runtime)
+    parser.add_argument("--runtime", choices=("claude", "codex", "grok"), default=runtime)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     report = run(args.runtime)

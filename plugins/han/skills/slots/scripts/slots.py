@@ -24,6 +24,7 @@ import mission_guard  # noqa: E402
 OK = 0
 FAILED = 1
 USAGE = 2
+RUNTIMES = ("claude", "codex", "grok")
 
 ROW_FIELDS = ("name", "path", "client", "created", "synced", "state")
 VARIABLE = re.compile(r"\{(\w+)\}")
@@ -1698,8 +1699,10 @@ def cmd_status(config, args):
 def build_parser():
     parser = argparse.ArgumentParser(prog="slots.py", description="슬롯 워크스페이스 관리")
     parser.add_argument("--project", help="어댑터를 찾기 시작할 폴더 (기본: 현재 폴더)")
+    parser.add_argument("--runtime", choices=RUNTIMES, default=None, help="어댑터 검색. 기본은 호출 런타임, Grok은 grok")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--project", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    common.add_argument("--runtime", choices=RUNTIMES, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", parents=[common]).add_argument("names", nargs="*")
@@ -1753,7 +1756,10 @@ def main(argv=None, runtime="claude"):
         args = build_parser().parse_args(argv)
     except SystemExit as e:
         return USAGE if e.code else OK
+    runtime = getattr(args, "runtime", None) or runtime
     try:
+        if args.command == "run" and runtime == "grok":
+            raise UsageError("run 은 Claude·Codex 세션만 띄운다. Grok은 슬롯 폴더에서 grok 를 열고 han-run 을 쓴다")
         located = locate(args.project, runtime)
         config = Config(located, read_adapter(located.adapter_path, runtime), runtime)
         return COMMANDS[args.command](config, args)
