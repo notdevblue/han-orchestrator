@@ -29,6 +29,7 @@ MISSION_STATE = {
     "codex": os.path.join(PLUGIN, "codex", "skills", "han-mission", "scripts", "mission_state.py"),
     "grok": SHARED_MISSION_STATE,
 }
+GROK_NATIVE_ROLES = ("researcher", "dev-small", "dev-medium", "verifier", "reviewer")
 
 
 class Report:
@@ -206,6 +207,54 @@ def grok_han_hook(entry):
     return False
 
 
+def grok_path(path):
+    return os.path.normcase(os.path.realpath(os.path.abspath(path)))
+
+
+def check_grok_agents(report, inspection):
+    expected = {f"han:{role}": os.path.join(PLUGIN, "grok", "agents", f"{role}.md") for role in GROK_NATIVE_ROLES}
+    agents = inspection.get("agents")
+    discovered = {}
+    if isinstance(agents, list):
+        for entry in agents:
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                discovered.setdefault(entry["name"], []).append(entry)
+    missing = sorted(set(expected) - set(discovered))
+    wrong_source = []
+    for name, path in expected.items():
+        entries = discovered.get(name, [])
+        if not entries:
+            continue
+        source = entries[0].get("source")
+        source_path = ""
+        if isinstance(source, dict):
+            source_path = source.get("path", "")
+        if len(entries) != 1 or not isinstance(source_path, str) or not source_path or grok_path(source_path) != grok_path(path):
+            wrong_source.append(name)
+    unexpected = sorted(name for name in discovered if name.startswith("han:") and name not in expected)
+    level = "OK"
+    detail = f"native 역할 검색 {len(expected) - len(missing) - len(wrong_source)}/{len(expected)}개"
+    for label, names in (("없음", missing), ("원본 경로 불일치·중복", wrong_source), ("예상 밖 역할", unexpected)):
+        if names:
+            level = "WARN"
+            detail += f" — {label}: {', '.join(names)}"
+    detail += " — 검색 결과는 파견·모델·effort 실행 검증이 아님"
+    report.add(level, "grok-agents", detail)
+    plugins = inspection.get("plugins")
+    selected = []
+    if isinstance(plugins, list):
+        selected = [entry for entry in plugins if isinstance(entry, dict) and entry.get("name") == "han"]
+    native = []
+    for entry in selected:
+        path = entry.get("path", "")
+        if isinstance(path, str) and path and grok_path(path) == grok_path(PLUGIN) and entry.get("enabled") is True:
+            native.append(entry)
+    level = "WARN"
+    if len(selected) == 1 and len(native) == 1:
+        level = "OK"
+    report.add(level, "grok-native", f"선택된 han 경로·활성 상태 {level} — 기대 경로 {PLUGIN}")
+
+
 def check_grok(report):
     executable = shutil.which("grok")
     if not executable:
@@ -245,6 +294,7 @@ def check_grok(report):
         level = "WARN"
         detail += f" — 없음: {', '.join(missing)}"
     report.add(level, "grok-skills", detail)
+    check_grok_agents(report, inspection)
     hooks = inspection.get("hooks")
     registered = []
     if isinstance(hooks, list):

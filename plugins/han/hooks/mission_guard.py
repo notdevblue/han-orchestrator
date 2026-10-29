@@ -385,8 +385,19 @@ def read_local(adapter_path, problems):
     return local
 
 
+def runtime_overlay(adapter, runtime, source):
+    runtimes = adapter.get("runtimes", {})
+    if not isinstance(runtimes, dict):
+        raise GuardOff(f"{source} 의 runtimes 는 객체여야 함")
+    overlay = runtimes.get(runtime, {})
+    if not isinstance(overlay, dict):
+        raise GuardOff(f"{source} 의 runtimes.{runtime} 는 객체여야 함")
+    return overlay
+
+
 def load_adapter(adapter_path, problems=None, runtime="claude"):
-    problems = [] if problems is None else problems
+    if problems is None:
+        problems = []
     try:
         adapter = read_json_file(adapter_path)
     except (OSError, ValueError) as e:
@@ -394,17 +405,11 @@ def load_adapter(adapter_path, problems=None, runtime="claude"):
     if not isinstance(adapter, dict):
         raise GuardOff(f"adapter.json schema 가 1이 아님 ({adapter_path})")
     local = read_local(adapter_path, problems)
-    if runtime == "codex":
-        overlay = (adapter.get("runtimes") or {}).get("codex") or {}
-        if not isinstance(overlay, dict):
-            raise GuardOff("runtimes.codex 는 객체여야 함")
-        adapter = merge_local(adapter, overlay)
+    if runtime in ("codex", "grok"):
+        adapter = merge_local(adapter, runtime_overlay(adapter, runtime, "adapter.json"))
     adapter = merge_local(adapter, local)
-    if runtime == "codex":
-        overlay = (local.get("runtimes") or {}).get("codex") or {}
-        if not isinstance(overlay, dict):
-            raise GuardOff("local.json 의 runtimes.codex 는 객체여야 함")
-        adapter = merge_local(adapter, overlay)
+    if runtime in ("codex", "grok"):
+        adapter = merge_local(adapter, runtime_overlay(local, runtime, "local.json"))
     if adapter.get("schema") != SUPPORTED_SCHEMA:
         raise GuardOff(f"adapter.json schema 가 1이 아님 ({adapter_path})")
     return adapter

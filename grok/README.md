@@ -7,7 +7,7 @@
 코디네이터는 상태를 읽고, 메인 또는 슬롯의 실행 봇에 작업을 넘겨 Grok만으로 진행할 수 있다.
 로컬 상태·슬롯 조회는 han 스크립트로 하고, 저장소 코드 작업은 프로젝트의 실행 규칙을 따른다. Claude·Codex는 선택 경로다.
 상태의 원본은 언제나 어댑터의 `<stateDir>`이고, 아래 스크립트 호출은 machine Shell(PowerShell)로 출력만 읽는다.
-봇을 깨우는 인계는 `han-mission-brief`의 SendToAgent다. Main 또는 slotN에서 도는 Grok CLI는 `han-run`으로 그 자리에서 구현한다.
+봇을 깨우는 인계는 `han-mission-brief`의 SendToAgent다. Main 또는 slotN에서 도는 Grok CLI는 `han-run`으로 native 역할별 하위 에이전트를 조율한다. 역할 계약은 [Grok 실행 역할](../plugins/han/grok/README.md#실행-역할)에 있다.
 CLI가 읽은 전역 실행 규칙은 `grok inspect`에서 확인한다. 이 초안이 적는 명령으로 미션 파일을 쓰지 않는다.
 
 ## 공통 실행 환경 (PowerShell)

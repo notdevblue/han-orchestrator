@@ -83,7 +83,10 @@ def grok_inspection(trusted=False):
     skill_root = os.path.join(doctor.PLUGIN, "grok", "skills")
     skills = [{"name": name} for name in os.listdir(skill_root)
               if name not in ("han-watch", "han-handoff") and os.path.isfile(os.path.join(skill_root, name, "SKILL.md"))]
-    return {"projectTrusted": trusted, "skills": skills,
+    agents = [{"name": f"han:{role}", "source": {"type": "plugin", "path": os.path.join(doctor.PLUGIN, "grok", "agents", f"{role}.md")}}
+              for role in doctor.GROK_NATIVE_ROLES]
+    return {"projectTrusted": trusted, "skills": skills, "agents": agents,
+            "plugins": [{"name": "han", "path": doctor.PLUGIN, "enabled": True, "provides": {"agents": 1}}],
             "hooks": [{"event": "(plugin)", "hookType": "file", "target": "/example/plugins/han/hooks/hooks.json"}]}
 
 
@@ -104,6 +107,8 @@ def test_grok_doctor_reports_discovery_separately_from_trust(monkeypatch):
     assert calls == [["/example/grok", "--version"], ["/example/grok", "inspect", "--json"]]
     assert levels(report, "grok-cli") == ["OK"]
     assert levels(report, "grok-skills") == ["OK"]
+    assert levels(report, "grok-agents") == ["OK"]
+    assert levels(report, "grok-native") == ["OK"]
     assert levels(report, "grok-hooks") == ["OK"]
     assert levels(report, "grok-trust") == ["WARN"]
     assert any("로드·실행 검증이 아님" in row["text"] for row in report.rows)
@@ -152,5 +157,62 @@ def test_grok_doctor_missing_registration_is_a_warning(monkeypatch):
     report = doctor.Report()
     doctor.check_grok(report)
     assert levels(report, "grok-skills") == ["WARN"]
+    assert levels(report, "grok-agents") == ["WARN"]
+    assert levels(report, "grok-native") == ["WARN"]
     assert levels(report, "grok-hooks") == ["WARN"]
     assert levels(report, "grok-trust") == ["OK"]
+
+
+@pytest.mark.parametrize("change,detail", [
+    ("missing", "없음: han:reviewer"),
+    ("wrong-name", "예상 밖 역할: han:other"),
+    ("compat-source", "원본 경로 불일치·중복: han:reviewer"),
+    ("missing-source", "원본 경로 불일치·중복: han:reviewer"),
+    ("duplicate", "원본 경로 불일치·중복: han:reviewer"),
+])
+def test_grok_doctor_reports_missing_or_wrong_native_roles(change, detail):
+    inspection = grok_inspection()
+    reviewer = inspection["agents"][-1]
+    if change == "missing":
+        inspection["agents"].pop()
+    elif change == "wrong-name":
+        reviewer["name"] = "han:other"
+    elif change == "compat-source":
+        reviewer["source"]["path"] = os.path.join(doctor.PLUGIN, "agents", "reviewer.md")
+    elif change == "missing-source":
+        reviewer.pop("source")
+    else:
+        inspection["agents"].append(dict(reviewer))
+    report = doctor.Report()
+    doctor.check_grok_agents(report, inspection)
+    assert levels(report, "grok-agents") == ["WARN"]
+    row = next(row for row in report.rows if row["area"] == "grok-agents")
+    assert detail in row["text"]
+    assert "4/5개" in row["text"]
+
+
+@pytest.mark.parametrize("change", ["wrong-path", "disabled", "missing", "duplicate"])
+def test_grok_doctor_rejects_inactive_or_wrong_selected_plugin(change):
+    inspection = grok_inspection()
+    plugin = inspection["plugins"][0]
+    if change == "wrong-path":
+        plugin["path"] = os.path.join(doctor.PLUGIN, "other")
+    elif change == "disabled":
+        plugin["enabled"] = False
+    elif change == "missing":
+        inspection.pop("plugins")
+    else:
+        inspection["plugins"].append(dict(plugin))
+    report = doctor.Report()
+    doctor.check_grok_agents(report, inspection)
+    assert levels(report, "grok-native") == ["WARN"]
+
+
+def test_grok_doctor_does_not_use_registration_directory_count_as_role_count():
+    inspection = grok_inspection()
+    inspection["agents"].append({"name": "other:researcher", "source": {"type": "plugin", "path": "/other/researcher.md"}})
+    report = doctor.Report()
+    doctor.check_grok_agents(report, inspection)
+    assert levels(report, "grok-agents") == ["OK"]
+    assert levels(report, "grok-native") == ["OK"]
+    assert any("파견·모델·effort 실행 검증이 아님" in row["text"] for row in report.rows)

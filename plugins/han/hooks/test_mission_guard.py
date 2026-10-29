@@ -1178,6 +1178,63 @@ def test_load_adapter_merges_local_next_to_adapter_json(project):
     assert adapter["schema"] == 1
 
 
+@pytest.mark.parametrize("runtime", ["codex", "grok"])
+def test_load_adapter_runtime_precedence_preserves_other_runtimes(project, runtime):
+    path = write_adapter_file(project)
+    adapter = json.loads(path.read_text(encoding="utf-8"))
+    adapter["roles"] = {"research": "base-research", "implement": "base-implement"}
+    adapter["stages"] = ["base"]
+    adapter["runtimes"] = {
+        "codex": {"project": "codex-base", "roles": {"research": "codex-research"}, "stages": ["codex"]},
+        "grok": {"project": "grok-base", "roles": {"research": "grok-research"}, "stages": ["grok"]},
+    }
+    write_json(path, adapter)
+    write_json(path.parent / "local.json", {
+        "project": "local",
+        "roles": {"implement": "local-implement"},
+        "runtimes": {
+            runtime: {"project": f"{runtime}-local", "paths": {"stateDir": f"{runtime}-state"}},
+        },
+    })
+    loaded = mission_guard.load_adapter(str(path), runtime=runtime)
+    assert loaded["project"] == f"{runtime}-local"
+    assert loaded["roles"] == {"research": f"{runtime}-research", "implement": "local-implement"}
+    assert loaded["paths"]["stateDir"] == f"{runtime}-state"
+    assert loaded["stages"] == [runtime]
+    assert loaded["guard"]["deny"] == [SUBMIT_RULE]
+    assert mission_guard.load_adapter(str(path), runtime="claude")["roles"] == {
+        "research": "base-research", "implement": "local-implement",
+    }
+    if runtime == "codex":
+        other = "grok"
+    else:
+        other = "codex"
+    assert mission_guard.load_adapter(str(path), runtime=other)["roles"]["research"] == f"{other}-research"
+
+
+@pytest.mark.parametrize("runtime", ["codex", "grok"])
+@pytest.mark.parametrize("source", ["adapter.json", "local.json"])
+@pytest.mark.parametrize("overlay", [[], "invalid", False, None])
+def test_load_adapter_rejects_invalid_runtime_overlay(project, runtime, source, overlay):
+    path = write_adapter_file(project)
+    target = path.parent / source
+    body = {}
+    if target.exists():
+        body = json.loads(target.read_text(encoding="utf-8"))
+    body["runtimes"] = {runtime: overlay}
+    write_json(target, body)
+    with pytest.raises(mission_guard.GuardOff, match=rf"{source} .*runtimes\.{runtime}"):
+        mission_guard.load_adapter(str(path), runtime=runtime)
+
+
+@pytest.mark.parametrize("runtime", ["codex", "grok"])
+def test_load_adapter_rejects_invalid_runtime_container(project, runtime):
+    path = write_adapter_file(project)
+    write_json(path.parent / "local.json", {"runtimes": []})
+    with pytest.raises(mission_guard.GuardOff, match="local.json .*runtimes"):
+        mission_guard.load_adapter(str(path), runtime=runtime)
+
+
 def test_load_adapter_broken_local_uses_adapter_only_and_reports(project):
     path = write_adapter_file(project)
     (path.parent / "local.json").write_text("{broken", encoding="utf-8")

@@ -151,11 +151,27 @@ def test_native_matchers_cover_current_grok_contract():
         assert set(("run_terminal_command", "Shell", "search_replace", "write")).issubset(hooks[event][0]["matcher"].split("|"))
 
 
-def test_native_manifest_exposes_only_grok_skills():
+def test_native_manifest_exposes_only_grok_skills_and_agents():
     root = Path(__file__).parents[1]
     manifest = json.loads((root / ".grok-plugin/plugin.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "han"
-    assert manifest["agents"] == []
+    assert manifest["agents"]
+    native_agent_root = (root / "grok/agents").resolve()
+    claude_agent_root = (root / "agents").resolve()
+    discovered = []
+    for path in manifest["agents"]:
+        agent_dir = (root / path).resolve()
+        assert agent_dir == native_agent_root
+        assert not agent_dir.is_relative_to(claude_agent_root)
+        assert agent_dir.is_dir()
+        for agent in agent_dir.glob("*.md"):
+            text = agent.read_text(encoding="utf-8")
+            assert text.startswith("---\n")
+            fields = dict(line.split(": ", 1) for line in text.split("---", 2)[1].strip().splitlines())
+            discovered.append(f"{manifest['name']}:{fields['name']}")
+            assert fields["model"] == "inherit"
+    assert len(discovered) == 5
+    assert set(discovered) == {"han:researcher", "han:dev-small", "han:dev-medium", "han:verifier", "han:reviewer"}
     assert len(manifest["skills"]) == 8
     assert len(set(manifest["skills"])) == 8
     for skill in manifest["skills"]:

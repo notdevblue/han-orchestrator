@@ -44,7 +44,7 @@ Grok SessionStart는 `new`·`load`를 지원한다. 미션 가드는 Grok 도구
 Grok CLI·Bot에 등록하는 스킬은 `han-status`, `han-doctor`, `han-mission-brief`, `han-run`, `han-mission`, `han-slots`, `han-adapter-init`, `han-distill`이다.
 `han-watch`와 `han-handoff`는 그 등록 스킬을 가리키는 저장소 안내이며 등록하지 않는다.
 
-Grok의 검색만 아래 순서를 쓴다. Claude·Codex의 검색 순서와 `runtimes.codex` 병합은 그대로다.
+Grok의 검색은 아래 순서를 쓴다. Claude·Codex의 검색 순서는 그대로다.
 가까운 폴더가 우선이고, 한 폴더 안에서는 앞에 있는 파일이 우선이다.
 
 1. `.grok/orchestrator/adapter.json`, 이어서 같은 폴더의 `.claude/orchestrator/adapter.json`, 이어서 `.codex/orchestrator/adapter.json`.
@@ -53,7 +53,25 @@ Grok의 검색만 아래 순서를 쓴다. Claude·Codex의 검색 순서와 `ru
 4. 그것도 없으면 이 저장소에서 스크립트를 직접 실행할 때 `<저장소>/adapters`.
 
 Claude 플러그인 설정과 Codex `config.toml`은 읽지 않는다. Grok은 `~/.grok/plugins/han`에 native 등록하고, 선택 경로와 manifest는 `grok inspect`로 확인한다.
-상태 경로는 공유 병합인 `adapter.json` 다음 `local.json`만 적용한다. `runtimes.codex`와 별도의 Grok 미션 오버레이는 적용하지 않는다.
+Grok 전용 값은 `runtimes.grok` 객체에 둔다. 병합 순서는 `adapter.json` → 그 파일의 `runtimes.grok` → `local.json` → 그 파일의 `runtimes.grok`다. 객체는 깊게 병합하고 배열·스칼라는 교체한다. 조회·미션·가드·doctor·슬롯이 같은 병합을 쓴다. `brief --runtime claude|codex`는 같은 발견 순서를 유지하되 인계할 런타임의 병합으로 상태를 읽는다.
+
+역할을 명시할 때는 아래처럼 native 이름을 쓴다. 기본 역할의 호환 이름과 파견 규칙은 [Grok 역할 계약](../../../grok/skills/han-mission/references/grok-roles.md)에 있다.
+
+```json
+{
+  "runtimes": {
+    "grok": {
+      "roles": {
+        "research": "han:researcher",
+        "implement": "han:dev-medium",
+        "verify": "han:verifier",
+        "review": "han:reviewer",
+        "audit": "han:reviewer"
+      }
+    }
+  }
+}
+```
 
 ## adapter.json
 

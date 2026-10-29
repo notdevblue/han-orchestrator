@@ -24,7 +24,7 @@ def adapter_body(project="base"):
         "schema": 1,
         "project": project,
         "paths": {"stateDir": "_My/missions"},
-        "runtimes": {"codex": {"project": "codex-only"}, "grok": {"project": "grok-only"}},
+        "runtimes": {"codex": {"project": "codex-only"}},
     }
 
 
@@ -135,7 +135,7 @@ def test_grok_registry_matches_projects_json(tmp_path, monkeypatch):
     assert found.adapter_path == str(registry / "game" / "adapter.json")
 
 
-def test_snapshot_reads_state_without_runtime_overlay_or_writes(tmp_path):
+def test_snapshot_reads_state_without_writes(tmp_path):
     project = tmp_path / "game"
     plant(project, ".grok")
     write_json(
@@ -181,13 +181,64 @@ def test_snapshot_reads_state_without_runtime_overlay_or_writes(tmp_path):
     after = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*"))
     assert before == after
     assert "프로젝트: from-local" in text
-    assert "codex-only" not in text and "grok-only" not in text
+    assert "codex-only" not in text
     assert "20261026-demo [ACTIVE] 상태=진행 단계=impl 확인 A=승인 확인 B=대기 확인 C=대기 목표=버튼 입력을 서버로 보낸다" in text
     assert "20261026-stale [진행, ACTIVE 아님]" in text
     assert "20261001-old" not in text
     assert f"slot1 state=ready" in text and "active=20261026-slot 상태=진행 단계=poc" in text
     assert "비어 있는 ready 슬롯: slot2" in text
     assert "지난 일" not in text
+
+
+def test_snapshot_uses_grok_runtime_state_paths_and_local_precedence(tmp_path):
+    project = tmp_path / "game"
+    path = plant(project, ".claude")
+    adapter = adapter_body()
+    adapter["runtimes"]["grok"] = {"project": "grok-base", "paths": {"stateDir": "grok-state"}}
+    write_json(path, adapter)
+    state = project / "local-grok-state"
+    state.mkdir()
+    (state / "ACTIVE").write_text(json.dumps({"id": "demo", "session": "grok-session"}), encoding="utf-8")
+    write_json(path.parent / "local.json", {
+        "project": "local-base",
+        "paths": {"stateDir": "local-base-state"},
+        "runtimes": {"grok": {"project": "grok-local", "paths": {"stateDir": "local-grok-state"}}},
+    })
+    before = sorted(item.relative_to(tmp_path).as_posix() for item in tmp_path.rglob("*"))
+    snapshot = han_state.build_snapshot(str(project))
+    assert "프로젝트: grok-local" in snapshot.lines
+    assert f"상태 폴더: {state}" in snapshot.lines
+    assert snapshot.active.id == "demo"
+    assert before == sorted(item.relative_to(tmp_path).as_posix() for item in tmp_path.rglob("*"))
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex", "grok"])
+@pytest.mark.parametrize("local_override", [False, True])
+def test_brief_reads_target_runtime_state(tmp_path, runtime, local_override):
+    project = tmp_path / "game"
+    path = plant(project, ".grok")
+    adapter = adapter_body()
+    adapter["runtimes"]["grok"] = {"project": "grok-only", "paths": {"stateDir": "grok-state"}}
+    adapter["runtimes"]["codex"]["paths"] = {"stateDir": "codex-state"}
+    write_json(path, adapter)
+    expected = {"claude": ("base", "_My/missions"), "codex": ("codex-only", "codex-state"), "grok": ("grok-only", "grok-state")}
+    if local_override:
+        write_json(path.parent / "local.json", {
+            "project": "local-base", "paths": {"stateDir": "local-state"},
+            "runtimes": {
+                "codex": {"project": "local-codex", "paths": {"stateDir": "local-codex-state"}},
+                "grok": {"project": "local-grok", "paths": {"stateDir": "local-grok-state"}},
+            },
+        })
+        expected = {"claude": ("local-base", "local-state"), "codex": ("local-codex", "local-codex-state"), "grok": ("local-grok", "local-grok-state")}
+    name, state_dir = expected[runtime]
+    state = project / state_dir
+    state.mkdir(parents=True)
+    (state / "ACTIVE").write_text(json.dumps({"id": runtime, "session": "session"}), encoding="utf-8")
+    lines = han_state.build_brief(str(project), "inspect", runtime)
+    assert f"프로젝트: {name}" in lines
+    assert f"상태 폴더: {state}" in lines
+    assert any(f"메인 ACTIVE가 이미 있다 ({runtime})" in line for line in lines)
 
 
 def test_brief_mentions_existing_work_and_does_not_write(tmp_path):
@@ -402,6 +453,27 @@ def test_grok_skill_registration_names():
         assert name in readme
     assert "han-watch" in readme and "등록하지 않는다" in readme
     assert "<project>" in readme and "<slot-path>" in readme and "실행 규칙" in readme
+
+
+def test_grok_native_role_registration_and_runtime_settings():
+    plugin = SCRIPT.parents[2]
+    manifest = json.loads((plugin / ".grok-plugin/plugin.json").read_text(encoding="utf-8"))
+    assert manifest["agents"] == ["./grok/agents"]
+    expected = {"researcher": "medium", "dev-small": "medium", "dev-medium": "high", "verifier": "low", "reviewer": "high"}
+    agent_dir = plugin / manifest["agents"][0]
+    assert {path.stem for path in agent_dir.glob("*.md")} == set(expected)
+    for name, effort in expected.items():
+        text = (agent_dir / f"{name}.md").read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        fields = dict(line.split(": ", 1) for line in text.split("---", 2)[1].strip().splitlines())
+        assert fields["name"] == name
+        assert fields["model"] == "inherit"
+        assert fields["effort"] == effort
+    role_reference = (plugin / "grok/skills/han-mission/references/grok-roles.md").read_text(encoding="utf-8")
+    for name in expected:
+        assert f"han:{name}" in role_reference
+    assert "runtimes.grok.roles" in role_reference
+    assert "summary.json" in role_reference and "reasoning_effort" in role_reference
 
 
 def test_cli_snapshot_and_missing_adapter(tmp_path):

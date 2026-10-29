@@ -255,11 +255,11 @@ def format_active(active):
     return f"{active.id} session={session} openedAt={opened}"
 
 
-def build_snapshot(project):
+def build_snapshot(project, runtime="grok"):
     start = os.path.abspath(project or os.getcwd())
     located = mission_guard.find_adapter({"cwd": start, "han_runtime": "grok"})
     problems = []
-    adapter = mission_guard.load_adapter(located.adapter_path, problems, runtime="claude")
+    adapter = mission_guard.load_adapter(located.adapter_path, problems, runtime=runtime)
     main = os.path.normpath(str((adapter.get("vars") or {}).get("main") or located.project))
     state_dir = mission_guard.state_dir_of(main, adapter)
     state_rel = (adapter.get("paths") or {}).get("stateDir")
@@ -291,7 +291,7 @@ def build_brief(project, goal, runtime, slot=""):
         raise Usage("goal 이 비어 있음")
     if runtime not in RUNTIME_LABEL:
         raise Usage("runtime 은 grok, claude, codex 중 하나")
-    snapshot = build_snapshot(project)
+    snapshot = build_snapshot(project, runtime)
     lines = list(snapshot.lines)
     if snapshot.active.corrupt:
         lines.append("주의: 메인 ACTIVE가 손상되어 있다. 새 미션을 열지 말고 사용자에게 알린다.")
